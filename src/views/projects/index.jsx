@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import styles from '../../styles/projects.module.css';
 import { useApp } from '../../context/AppContext';
 import {
@@ -126,6 +126,20 @@ const Projects = () => {
   const [uploadDocForm, setUploadDocForm] = useState({ projectId: '', docName: '', docType: 'pdf', docSize: '0.8 MB' });
   const [reportForm, setReportForm] = useState({ projectId: 'all', reportType: 'progress', format: 'pdf', dateRange: 'All' });
   const [dateErrors, setDateErrors] = useState({ startDate: '', deadline: '' });
+  // Save in progress: disables the modal's save button (state) and blocks double submits
+  // that arrive before React re-renders (ref)
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const savingProjectRef = useRef(false);
+  const beginSave = () => {
+    if (savingProjectRef.current) return false;
+    savingProjectRef.current = true;
+    setIsSavingProject(true);
+    return true;
+  };
+  const endSave = () => {
+    savingProjectRef.current = false;
+    setIsSavingProject(false);
+  };
 
   // Filtering Calculation
   const filteredProjects = useMemo(() => {
@@ -364,9 +378,13 @@ const Projects = () => {
   // Create Project Form Submit
   const handleCreateProjectSubmit = async (e) => {
     e.preventDefault();
+    if (savingProjectRef.current) return;
     // Validate dates before submitting
     const today = getTodayStr();
-    if (newProjectForm.startDate && newProjectForm.startDate < today) {
+    // A past start date is only invalid for new projects (or when it's changed while editing) —
+    // otherwise no project could be edited once it has started.
+    const startDateChanged = !selectedProject || newProjectForm.startDate !== selectedProject.startDate;
+    if (startDateChanged && newProjectForm.startDate && newProjectForm.startDate < today) {
       setDateErrors(prev => ({ ...prev, startDate: 'Start date cannot be in the past.' }));
       return;
     }
@@ -383,13 +401,21 @@ const Projects = () => {
           return;
         }
       }
-      const success = await updateProject(selectedProject.id, {
-        ...newProjectForm,
-        members: createSelectedMembers.length > 0 ? createSelectedMembers : (selectedProject.members || [])
-      });
-      if (success) {
-        setSelectedProject(null);
+      if (!beginSave()) return;
+      let success;
+      try {
+        success = await updateProject(selectedProject.id, {
+          ...newProjectForm,
+          members: createSelectedMembers.length > 0 ? createSelectedMembers : (selectedProject.members || [])
+        });
+      } finally {
+        endSave();
       }
+      if (!success) {
+        // Keep the form open with the user's changes; updateProject already showed the error
+        return;
+      }
+      setSelectedProject(null);
     } else {
       // Create mode
       const count = projects.length;
@@ -425,7 +451,12 @@ const Projects = () => {
         documents: [],
         tasks: []
       };
-      await addProject(newProjObj);
+      if (!beginSave()) return;
+      try {
+        await addProject(newProjObj);
+      } finally {
+        endSave();
+      }
     }
     setActiveModal(null);
     setNewProjectForm({
@@ -465,13 +496,21 @@ const Projects = () => {
     const targetProj = projects.find(p => p.id === projectId);
     if (!targetProj) return;
 
-    const success = await updateProject(projectId, { members: selectedMembers });
-    if (success) {
-      if (selectedProject && selectedProject.id === projectId) {
-        setSelectedProject({ ...selectedProject, members: selectedMembers });
-      }
-      addToast('success', 'Project team members updated successfully.');
+    if (!beginSave()) return;
+    let success;
+    try {
+      success = await updateProject(projectId, { members: selectedMembers });
+    } finally {
+      endSave();
     }
+    if (!success) {
+      // Keep the dialog open so the selection isn't lost; the error toast explains why
+      return;
+    }
+    if (selectedProject && selectedProject.id === projectId) {
+      setSelectedProject({ ...selectedProject, members: selectedMembers });
+    }
+    addToast('success', 'Project team members updated successfully.');
     setActiveModal(null);
   };
 
@@ -1409,7 +1448,7 @@ const Projects = () => {
                       <input
                         type="date"
                         className={styles.textInput}
-                        min={getTodayStr()}
+                        min={selectedProject && selectedProject.startDate && selectedProject.startDate < getTodayStr() ? selectedProject.startDate : getTodayStr()}
                         value={newProjectForm.startDate}
                         onChange={(e) => handleStartDateChange(e.target.value)}
                       />
@@ -1481,8 +1520,13 @@ const Projects = () => {
                 </div>
                 <div className={styles.modalFooter} style={{ flexShrink: 0 }}>
                   <button type="button" className={styles.pageBtn} onClick={() => { setActiveModal(null); setCreateEmpSearch(''); setCreateSelectedMembers([]); }}>Cancel</button>
-                  <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`}>
-                    {selectedProject ? 'Save Changes' : 'Initialize Project'}
+                  <button
+                    type="submit"
+                    className={`${styles.pageBtn} ${styles.primaryAction}`}
+                    disabled={isSavingProject}
+                    style={isSavingProject ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+                  >
+                    {isSavingProject ? 'Saving…' : (selectedProject ? 'Save Changes' : 'Initialize Project')}
                   </button>
                 </div>
               </form>
@@ -1659,8 +1703,13 @@ const Projects = () => {
                 </div>
                 <div className={styles.modalFooter}>
                   <button type="button" className={styles.pageBtn} onClick={() => { setActiveModal(null); setAssignTeamSearch(''); }}>Cancel</button>
-                  <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`} disabled={!assignTeamForm.projectId}>
-                    Save Team Assignments ({selectedCount})
+                  <button
+                    type="submit"
+                    className={`${styles.pageBtn} ${styles.primaryAction}`}
+                    disabled={!assignTeamForm.projectId || isSavingProject}
+                    style={isSavingProject ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+                  >
+                    {isSavingProject ? 'Saving…' : `Save Team Assignments (${selectedCount})`}
                   </button>
                 </div>
               </form>
