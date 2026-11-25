@@ -40,10 +40,7 @@ const UploadDocumentModal = ({ isOpen, onClose, initialDocument = null }) => {
     projectsList, 
     departments, 
     allEmployees, 
-    documentsList, 
-    addDocument, 
-    createVersion,
-    updateRecord 
+    addDocument
   } = useApp();
 
   const fileInputRef = useRef(null);
@@ -66,11 +63,6 @@ const UploadDocumentModal = ({ isOpen, onClose, initialDocument = null }) => {
   const [selectedRoles, setSelectedRoles] = useState([]);
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   
-  // Duplicate Resolution State
-  const [duplicateDoc, setDuplicateDoc] = useState(null);
-  const [resolveOption, setResolveOption] = useState(null); // 'version' | 'replace' | 'keep'
-  const [versionComment, setVersionComment] = useState('');
-  const [majorUpdate, setMajorUpdate] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   // Sync category defaults on scope change
@@ -132,69 +124,28 @@ const UploadDocumentModal = ({ isOpen, onClose, initialDocument = null }) => {
         projName = proj ? proj.name : '';
       }
 
-      // Check for duplicates (same name and scope) if we are not resolving yet
-      if (!resolveOption) {
-        const duplicate = documentsList.find(
-          d => d.name.toLowerCase() === name.trim().toLowerCase() && 
-          d.documentScope === scope && 
-          d.status !== 'Deleted'
-        );
+      // Same-named files are allowed (e.g. in different folders) — every upload is saved as its own document.
+      const payload = {
+        name: name.trim(),
+        description,
+        tags: tagsArray,
+        documentScope: scope,
+        projectId: scope === 'PROJECT' ? projectId : null,
+        projectName: scope === 'PROJECT' ? projName : null,
+        departmentId: scope === 'GENERAL' ? departmentName : null, // mapping label as id for simplicity
+        departmentName: scope === 'GENERAL' ? departmentName : null,
+        category,
+        visibility,
+        visibilityDetails: {
+          roles: selectedRoles,
+          userIds: selectedUserIds
+        },
+        type: fileExt.toUpperCase(),
+        size: sizeStr,
+        fileUrl: fileBase64
+      };
 
-        if (duplicate) {
-          setDuplicateDoc(duplicate);
-          setResolveOption('version'); // default resolution strategy
-          setIsUploading(false);
-          return;
-        }
-      }
-
-      // Execute Action based on resolution selection
-      if (resolveOption === 'version' && duplicateDoc) {
-        // Upload New Version
-        await createVersion(duplicateDoc.id, {
-          fileUrl: fileBase64,
-          size: sizeStr,
-          comment: versionComment || 'Uploaded new version',
-          majorUpdate
-        });
-      } else if (resolveOption === 'replace' && duplicateDoc) {
-        // Replace existing
-        await updateRecord(duplicateDoc.id, {
-          fileUrl: fileBase64,
-          size: sizeStr,
-          lastModifiedBy: 'Operator',
-          lastModifiedDate: new Date().toISOString().split('T')[0]
-        });
-        addToast('success', 'Document replaced successfully.');
-      } else {
-        // Standard Upload (includes 'keep' rename)
-        let finalName = name.trim();
-        if (resolveOption === 'keep' && duplicateDoc) {
-          finalName = `${finalName} (Copy)`;
-        }
-
-        const payload = {
-          name: finalName,
-          description,
-          tags: tagsArray,
-          documentScope: scope,
-          projectId: scope === 'PROJECT' ? projectId : null,
-          projectName: scope === 'PROJECT' ? projName : null,
-          departmentId: scope === 'GENERAL' ? departmentName : null, // mapping label as id for simplicity
-          departmentName: scope === 'GENERAL' ? departmentName : null,
-          category,
-          visibility,
-          visibilityDetails: {
-            roles: selectedRoles,
-            userIds: selectedUserIds
-          },
-          type: fileExt.toUpperCase(),
-          size: sizeStr,
-          fileUrl: fileBase64
-        };
-
-        await addDocument(payload);
-      }
+      await addDocument(payload);
 
       handleResetClose();
     } catch (err) {
@@ -216,10 +167,6 @@ const UploadDocumentModal = ({ isOpen, onClose, initialDocument = null }) => {
     setVisibility('Company Wide');
     setSelectedRoles([]);
     setSelectedUserIds([]);
-    setDuplicateDoc(null);
-    setResolveOption(null);
-    setVersionComment('');
-    setMajorUpdate(false);
     onClose();
   };
 
@@ -229,76 +176,10 @@ const UploadDocumentModal = ({ isOpen, onClose, initialDocument = null }) => {
     <Modal
       isOpen={isOpen}
       onClose={handleResetClose}
-      title={duplicateDoc ? 'Duplicate File Detected' : 'Upload Document'}
-      size={duplicateDoc ? 'sm' : 'md'}
+      title="Upload Document"
+      size="md"
     >
-      {duplicateDoc ? (
-        // Duplicate Resolution Screen
-        <div className="flex-column gap-4 padding-1">
-          <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '16px', borderRadius: 'var(--radius-lg)' }} className="flex-column gap-2">
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: '600' }}>
-              A document named "{name}" already exists.
-            </span>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              Choose how you would like to resolve this conflict:
-            </span>
-          </div>
-
-          <div className="flex-column gap-2">
-            <label className={`form-radio-card ${resolveOption === 'version' ? 'active' : ''}`} style={{ display: 'flex', gap: '12px', padding: '12px', border: '1px solid var(--border-color-dark)', borderRadius: 'var(--radius-md)', cursor: 'pointer', background: resolveOption === 'version' ? 'rgba(219, 39, 119, 0.05)' : 'none' }}>
-              <input type="radio" name="resolve" checked={resolveOption === 'version'} onChange={() => setResolveOption('version')} />
-              <div>
-                <strong style={{ display: 'block', fontSize: '0.875rem' }}>Upload New Version (v{(parseFloat(duplicateDoc.version || '1.0') + 0.1).toFixed(1)})</strong>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Retain file history and bump document version count.</span>
-              </div>
-            </label>
-
-            <label className={`form-radio-card ${resolveOption === 'replace' ? 'active' : ''}`} style={{ display: 'flex', gap: '12px', padding: '12px', border: '1px solid var(--border-color-dark)', borderRadius: 'var(--radius-md)', cursor: 'pointer', background: resolveOption === 'replace' ? 'rgba(219, 39, 119, 0.05)' : 'none' }}>
-              <input type="radio" name="resolve" checked={resolveOption === 'replace'} onChange={() => setResolveOption('replace')} />
-              <div>
-                <strong style={{ display: 'block', fontSize: '0.875rem' }}>Replace Existing File</strong>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Overwrite the file uploader URL without saving history.</span>
-              </div>
-            </label>
-
-            <label className={`form-radio-card ${resolveOption === 'keep' ? 'active' : ''}`} style={{ display: 'flex', gap: '12px', padding: '12px', border: '1px solid var(--border-color-dark)', borderRadius: 'var(--radius-md)', cursor: 'pointer', background: resolveOption === 'keep' ? 'rgba(219, 39, 119, 0.05)' : 'none' }}>
-              <input type="radio" name="resolve" checked={resolveOption === 'keep'} onChange={() => setResolveOption('keep')} />
-              <div>
-                <strong style={{ display: 'block', fontSize: '0.875rem' }}>Keep Both Files</strong>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Rename the new file to "{name} (Copy)" and save as new.</span>
-              </div>
-            </label>
-          </div>
-
-          {resolveOption === 'version' && (
-            <div className="flex-column gap-3 padding-top-1">
-              <div className="form-group flex-column gap-1">
-                <label>Version Comment</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Fixed section 4 typos"
-                  value={versionComment}
-                  onChange={e => setVersionComment(e.target.value)}
-                />
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
-                <input type="checkbox" checked={majorUpdate} onChange={e => setMajorUpdate(e.target.checked)} />
-                <span>This is a major version release (bump to v{(parseInt(duplicateDoc.version || '1.0') + 1).toFixed(1)})</span>
-              </label>
-            </div>
-          )}
-
-          <div className="flex-row gap-3 justify-end mt-2">
-            <Button variant="secondary" onClick={() => setDuplicateDoc(null)}>
-              Back
-            </Button>
-            <Button variant="primary" onClick={handleUploadSubmit} disabled={isUploading} loading={isUploading}>
-              Resolve & Upload
-            </Button>
-          </div>
-        </div>
-      ) : (
-        // Standard Upload Form
+      {/* Upload Form */}
         <form onSubmit={handleUploadSubmit} className="flex-column gap-3 padding-1">
           {/* Scope selection */}
           <div className="form-group flex-column gap-1">
@@ -503,7 +384,6 @@ const UploadDocumentModal = ({ isOpen, onClose, initialDocument = null }) => {
             </Button>
           </div>
         </form>
-      )}
     </Modal>
   );
 };
