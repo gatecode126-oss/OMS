@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import styles from '../../styles/projects.module.css';
 import {
   X, Briefcase, Calendar, Users, CheckSquare, Square,
-  FileText, Download, TrendingUp, Clock, AlertTriangle, File
+  FileText, Download, TrendingUp, AlertTriangle, File
 } from 'lucide-react';
 import Avatar from '../common/Avatar';
 import { useApp } from '../../context/AppContext';
@@ -80,7 +80,7 @@ const ProjectDetailPanel = ({ project, isOpen, onClose, onToggleTask }) => {
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'team-tasks', label: 'Team & Tasks' },
-            { id: 'docs-performance', label: 'Docs & Productivity' }
+            { id: 'docs-performance', label: 'Documents' }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -252,73 +252,9 @@ const ProjectDetailPanel = ({ project, isOpen, onClose, onToggleTask }) => {
             </>
           )}
 
-          {/* TAB 3: DOCS & PRODUCTIVITY */}
+          {/* TAB 3: DOCUMENTS */}
           {activeTab === 'docs-performance' && (
             <>
-              {/* Team Productivity */}
-              <div className={styles.detailSection}>
-                <h4 className={styles.sectionHeader}>Team Productivity</h4>
-                <div className={styles.workflowMetaRow} style={{ marginBottom: 12 }}>
-                  <div className={styles.workflowMetaCell}>
-                    <span className={styles.workflowMetaLabel}>Performance Rate</span>
-                    <span className={styles.workflowMetaVal} style={{ color: 'var(--color-primary)' }}>
-                      {project.productivityScore || 0}%
-                    </span>
-                  </div>
-                  <div className={styles.workflowMetaCell}>
-                    <span className={styles.workflowMetaLabel}>Working Hours</span>
-                    <span className={styles.workflowMetaVal}><Clock size={12} style={{ display: 'inline', marginRight: 4 }} /> {project.workingHours || 0} hrs</span>
-                  </div>
-                  <div className={styles.workflowMetaCell}>
-                    <span className={styles.workflowMetaLabel}>Task Success Rate</span>
-                    <span className={styles.workflowMetaVal} style={{ color: 'var(--color-success)' }}>
-                      {project.tasksTotal > 0 ? Math.round((project.tasksDone / project.tasksTotal) * 100) : 0}%
-                    </span>
-                  </div>
-                </div>
-
-                <span className={styles.detailLabel}>Employee Task Contribution</span>
-                <div className={styles.progressList}>
-                  {(() => {
-                    const memberTasks = project.tasks || [];
-                    const memberTaskCounts = {};
-                    let totalAssignedTaskHits = 0;
-
-                    (project.members || []).forEach(member => {
-                      const count = memberTasks.filter(t => 
-                        t.assignedTo?.some(name => name.toLowerCase() === member.toLowerCase()) || 
-                        (t.assigneeName && t.assigneeName.toLowerCase().includes(member.toLowerCase()))
-                      ).length;
-                      memberTaskCounts[member] = count;
-                      totalAssignedTaskHits += count;
-                    });
-
-                    return (project.members || []).map((member, i) => {
-                      const pct = totalAssignedTaskHits > 0 
-                        ? Math.round((memberTaskCounts[member] / totalAssignedTaskHits) * 100)
-                        : Math.round(100 / Math.max(1, project.members.length));
-                      return (
-                        <div key={i} className={styles.progressItem}>
-                          <div className={styles.progressLabelRow}>
-                            <span>{member}</span>
-                            <span>{pct}% contribution ({memberTaskCounts[member] || 0} tasks)</span>
-                          </div>
-                          <div className={styles.progressBarBg}>
-                            <div
-                              className={styles.progressBarFill}
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: `hsl(${(i * 90) % 360}, 60%, 55%)`
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-
               {/* Project Documents */}
               <div className={styles.detailSection}>
                 <h4 className={styles.sectionHeader}>Project Documents</h4>
