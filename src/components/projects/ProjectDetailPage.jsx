@@ -176,7 +176,8 @@ const ProjectDetailPage = ({ project: initialProject, onBack, onEdit, allProject
   const start = new Date(project.startDate || '2026-01-01');
   const end = new Date(project.deadline || '2026-12-31');
   const today = new Date('2026-06-03');
-  const totalDays = daysBetween(project.startDate, project.deadline);
+  // Projects without a deadline use the same chart end date as `end` above
+  const totalDays = daysBetween(project.startDate, project.deadline || '2026-12-31');
   const elapsedDays = Math.max(0, Math.min(daysBetween(project.startDate, '2026-06-03'), totalDays));
   const elapsedPct = Math.round((elapsedDays / totalDays) * 100);
 
@@ -332,9 +333,9 @@ const ProjectDetailPage = ({ project: initialProject, onBack, onEdit, allProject
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 12 }}>
           {[
             ['Start Date', project.startDate],
-            ['End Date', project.deadline],
-            ['Est. Completion', project.estimatedCompletion || project.deadline],
-            ['Duration', `${totalDays} days`]
+            ['End Date', project.deadline || 'No deadline'],
+            ['Est. Completion', project.estimatedCompletion || project.deadline || 'Ongoing'],
+            ['Duration', project.deadline ? `${totalDays} days` : 'Ongoing']
           ].map(([l, v]) => (
             <div key={l} style={colCard}>
               <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{l}</div>
@@ -347,7 +348,7 @@ const ProjectDetailPage = ({ project: initialProject, onBack, onEdit, allProject
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 6 }}>
             <span>{project.startDate}</span>
             <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>▼ Today (Day {elapsedDays})</span>
-            <span>{project.deadline}</span>
+            <span>{project.deadline || 'No deadline'}</span>
           </div>
           <div style={{ position: 'relative', height: 20, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'visible' }}>
             <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${project.progress}%`, background: 'linear-gradient(90deg, var(--color-primary), #3b82f6)', borderRadius: 'var(--radius-full)', transition: 'width 0.5s' }} />

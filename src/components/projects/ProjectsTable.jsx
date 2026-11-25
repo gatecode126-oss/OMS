@@ -181,7 +181,7 @@ const ProjectsTable = ({ projects, onView, onEdit, onAssignTeam }) => {
                       </span>
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>{p.startDate}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{p.deadline}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{p.deadline || 'No deadline'}</td>
                     <td>
                       <span style={{ fontWeight: '700', color: p.progress >= 100 ? 'var(--color-success)' : 'var(--text-primary)' }}>
                         {p.progress}%

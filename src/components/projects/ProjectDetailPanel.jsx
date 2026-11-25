@@ -124,7 +124,7 @@ const ProjectDetailPanel = ({ project, isOpen, onClose, onToggleTask }) => {
                   </div>
                   <div className={styles.detailField}>
                     <span className={styles.detailLabel}><Calendar size={12} style={{ marginRight: 4, display: 'inline' }} /> Deadline</span>
-                    <span className={styles.detailVal}>{project.deadline}</span>
+                    <span className={styles.detailVal}>{project.deadline || 'No deadline'}</span>
                   </div>
                   <div className={styles.detailField}>
                     <span className={styles.detailLabel}>Current Status</span>

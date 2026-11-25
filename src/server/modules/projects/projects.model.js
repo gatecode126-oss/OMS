@@ -61,9 +61,10 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Optional: '' means the project has no deadline (ongoing)
   deadline: {
     type: String,
-    required: true
+    default: ''
   },
   progress: {
     type: Number,

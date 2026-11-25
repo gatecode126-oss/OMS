@@ -410,7 +410,8 @@ const Projects = () => {
         members: membersList,
         priority: newProjectForm.priority,
         startDate: newProjectForm.startDate || new Date().toISOString().split('T')[0],
-        deadline: newProjectForm.deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        // Empty deadline = no deadline (previously silently set to today + 30 days)
+        deadline: newProjectForm.deadline || '',
         progress: 0,
         status: 'Pending',
         tasksTotal: 0,
@@ -809,7 +810,7 @@ const Projects = () => {
           ['Team Leader', targetProj.leader],
           ['Priority', targetProj.priority],
           ['Start Date', targetProj.startDate],
-          ['Deadline', targetProj.deadline],
+          ['Deadline', targetProj.deadline || 'No deadline'],
           ['Progress', `${targetProj.progress}%`],
           ['Status', targetProj.status],
           ['Workflow Stage', targetProj.workflowStage || 'Planning'],
@@ -869,7 +870,7 @@ const Projects = () => {
         p.leader,
         p.priority,
         p.startDate,
-        p.deadline,
+        p.deadline || 'No deadline',
         `${p.progress}%`,
         p.status
       ];
@@ -1419,7 +1420,7 @@ const Projects = () => {
                       )}
                     </div>
                     <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>Deadline</label>
+                      <label className={styles.formLabel}>Deadline (optional — leave empty for no deadline)</label>
                       <input
                         type="date"
                         className={styles.textInput}

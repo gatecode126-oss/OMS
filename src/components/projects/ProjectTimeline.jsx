@@ -18,11 +18,12 @@ const ProjectTimeline = ({ projects = [], onSelectProject }) => {
 
   // Helper to calculate position of a project bar in Gantt Chart
   const calculateBarPosition = (startStr, endStr) => {
-    const startDate = new Date(startStr);
-    const endDate = new Date(endStr);
-    
     const scaleStart = timelineMonths[0].start;
     const scaleEnd = timelineMonths[5].end;
+
+    const startDate = new Date(startStr);
+    // No deadline → ongoing: the bar runs to the end of the visible range
+    const endDate = endStr ? new Date(endStr) : scaleEnd;
     const totalDuration = scaleEnd - scaleStart;
 
     // Boundary check
@@ -206,13 +207,13 @@ const ProjectTimeline = ({ projects = [], onSelectProject }) => {
                         backgroundColor: p.status === 'Delayed' ? 'var(--color-danger)' : p.status === 'Completed' ? 'var(--color-success)' : 'var(--color-primary)'
                       }}
                       onClick={() => onSelectProject(p)}
-                      title={`${p.name} (${p.startDate} to ${p.deadline}) - Click for details`}
+                      title={`${p.name} (${p.startDate} to ${p.deadline || 'no deadline'}) - Click for details`}
                     >
                       {p.progress}%
                     </div>
                   ) : (
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic', paddingLeft: 12 }}>
-                      Starts: {p.startDate} / Ends: {p.deadline} (Out of Range)
+                      Starts: {p.startDate} / Ends: {p.deadline || 'No deadline'} (Out of Range)
                     </span>
                   )}
                 </div>

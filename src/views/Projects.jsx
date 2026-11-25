@@ -185,7 +185,7 @@ const Projects = () => {
                 <div className="prj-meta-grid">
                   <div className="prj-meta-cell">
                     <span className="prj-meta-label"><Calendar size={11} /> Deadline</span>
-                    <span className="prj-meta-val">{prj.deadline}</span>
+                    <span className="prj-meta-val">{prj.deadline || 'No deadline'}</span>
                   </div>
                   <div className="prj-meta-cell">
                     <span className="prj-meta-label"><Briefcase size={11} /> Dept</span>
