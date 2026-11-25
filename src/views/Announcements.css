@@ -1,0 +1,261 @@
+/* ==========================================================================
+   ENTERPRISE ANNOUNCEMENTS & DIGITAL BOARD STYLE SPEC
+   ========================================================================== */
+
+.announcements-page {
+  animation: fadeIn 0.4s ease-out;
+  padding-bottom: var(--spacing-8);
+}
+
+.announcements-page-header {
+  padding-bottom: var(--spacing-4);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Emergency Flash Banner styles */
+.emergency-flash-banner {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: var(--spacing-4) var(--spacing-6);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-lg);
+  border-left: 5px solid #ef4444;
+}
+
+.emergency-icon-ring {
+  background: rgba(239, 68, 68, 0.15);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emergency-banner-title {
+  color: #ef4444;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}
+
+.emergency-banner-desc {
+  margin-top: 3px;
+  color: var(--text-secondary);
+}
+
+/* Grid Layout Notice Cards */
+.announcements-grid-layout {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-6);
+}
+
+@media (max-width: 900px) {
+  .announcements-grid-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.notice-board-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-height: 240px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.notice-board-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl);
+}
+
+.pinned-highlight {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, var(--bg-card) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.spin-rotate {
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.7; }
+}
+
+.notice-title-bold {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.notice-title-bold:hover {
+  color: var(--color-primary);
+}
+
+.notice-description-preview {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: var(--spacing-3) 0;
+  flex-grow: 1;
+}
+
+/* Category select filter chips */
+.board-category-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.board-category-chip:hover {
+  background: var(--color-neutral-light);
+  color: var(--text-primary);
+}
+
+.board-category-chip.active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Attachments */
+.attachments-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 var(--spacing-4) 0;
+}
+
+.file-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--color-primary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.file-chip:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+/* Feedback counters and buttons */
+.feedback-reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feedback-reaction-btn:hover {
+  background: var(--color-neutral-light);
+  color: var(--text-primary);
+}
+
+.feedback-reaction-btn.liked {
+  color: var(--color-success) !important;
+  border-color: var(--color-success) !important;
+  background: var(--color-success-light) !important;
+}
+
+/* Emergency Action Tile Cards */
+.emergency-action-card {
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.emergency-action-card:hover {
+  background: var(--color-neutral-light);
+  transform: translateY(-2px);
+}
+
+.border-danger { border: 1px solid rgba(239, 68, 68, 0.4); }
+.border-warning { border: 1px solid rgba(245, 158, 11, 0.4); }
+.border-primary { border: 1px solid rgba(59, 130, 246, 0.4); }
+.border-neutral { border: 1px solid var(--border-color); }
+
+/* Discussion Comments drawer box */
+.max-height-comments {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.comment-balloon {
+  border: 1px solid var(--border-color);
+  transition: all 0.2s;
+}
+
+.comment-balloon:hover {
+  border-color: var(--border-color-dark);
+}
+
+.comment-delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+}
+
+.comment-balloon:hover .comment-delete-btn {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   FORM GRID & SELECT LAYOUT OVERRIDES
+   ========================================================================== */
+
+.grid-2-col {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.grid-3-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .grid-2-col, .grid-3-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Modal Form styling overrides to stretch selectors fully */
+.payroll-modal-container select.table-filter-select {
+  max-width: none !important;
+  width: 100% !important;
+}
+

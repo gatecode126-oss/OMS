@@ -1,0 +1,1973 @@
+import React, { useState, useMemo } from 'react';
+import styles from '../../styles/projects.module.css';
+import { useApp } from '../../context/AppContext';
+import {
+  TrendingUp, CheckCircle, Clock, AlertTriangle, Calendar,
+  Plus, Users, CheckSquare, FileText, Download, BarChart2, Bell, X
+} from 'lucide-react';
+import {
+  ResponsiveContainer, PieChart, Pie, Cell,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid
+} from 'recharts';
+
+import ProjectsTable from '../../components/projects/ProjectsTable';
+import ProjectDetailPanel from '../../components/projects/ProjectDetailPanel';
+import ProjectTimeline from '../../components/projects/ProjectTimeline';
+import ProjectFilters from '../../components/projects/ProjectFilters';
+import ActivityFeed from '../../components/projects/ActivityFeed';
+
+
+const Projects = () => {
+  const { token, addToast, employees, departments: rawDepartments, projectsList, addProject, updateProject, deleteProject, currentUserRole, hasPermission, currentUser } = useApp();
+  const departments = useMemo(() => (rawDepartments || []).filter(d => d.status === 'Active'), [rawDepartments]);
+
+  const [perspective, setPerspective] = useState(() => {
+    if (currentUserRole === 'employee') return 'self';
+    const hasCompanyRead = hasPermission('project_management', 'read', 'company');
+    const hasSelfRead = hasPermission('project_management', 'read', 'self');
+
+    const saved = localStorage.getItem('perspective_projects');
+    if (saved === 'self' && hasSelfRead) return 'self';
+    if (saved === 'company' && hasCompanyRead) return 'company';
+
+    return hasCompanyRead ? 'company' : 'self';
+  });
+
+  const showPerspectiveDropdown = useMemo(() => {
+    if (currentUserRole === 'employee') return false;
+    const hasCompanyRead = hasPermission('project_management', 'read', 'company');
+    const hasSelfRead = hasPermission('project_management', 'read', 'self');
+    return hasCompanyRead && hasSelfRead;
+  }, [currentUserRole, hasPermission]);
+
+  React.useEffect(() => {
+    if (currentUserRole !== 'employee') {
+      localStorage.setItem('perspective_projects', perspective);
+    }
+  }, [perspective, currentUserRole]);
+
+  React.useEffect(() => {
+    if (currentUserRole === 'employee') {
+      setPerspective('self');
+    } else {
+      const hasCompanyRead = hasPermission('project_management', 'read', 'company');
+      const hasSelfRead = hasPermission('project_management', 'read', 'self');
+      const saved = localStorage.getItem('perspective_projects');
+      if (saved === 'self' && hasSelfRead) {
+        setPerspective('self');
+      } else if (saved === 'company' && hasCompanyRead) {
+        setPerspective('company');
+      } else {
+        setPerspective(hasCompanyRead ? 'company' : 'self');
+      }
+    }
+  }, [currentUserRole, hasPermission]);
+
+  const isEmployeeView = perspective === 'self';
+  const isCompanyView = perspective === 'company';
+
+  // State Management
+  const [projects, setProjects] = useState([]);
+
+  React.useEffect(() => {
+    if (projectsList) {
+      if (isEmployeeView && currentUser) {
+        const filtered = projectsList.filter(p => {
+          const isManager = p.manager?.toLowerCase() === currentUser.name?.toLowerCase();
+          const isLeader = p.leader?.toLowerCase() === currentUser.name?.toLowerCase();
+          const isMember = p.members?.some(m => m?.toLowerCase() === currentUser.name?.toLowerCase());
+          const hasTask = p.tasks?.some(t => 
+            (t.assigneeId && t.assigneeId === currentUser.id) || 
+            (t.assigneeName && t.assigneeName.toLowerCase() === currentUser.name?.toLowerCase())
+          );
+          return isManager || isLeader || isMember || hasTask;
+        });
+        setProjects(filtered);
+      } else if (currentUserRole === 'branch_admin' && currentUser) {
+        const branchDepts = departments.filter(d => d.branch === currentUser.branch).map(d => d.name.toLowerCase());
+        const filtered = projectsList.filter(p => p.department && branchDepts.includes(p.department.toLowerCase()));
+        setProjects(filtered);
+      } else if ((currentUserRole === 'dept_admin' || currentUserRole === 'team_leader') && currentUser) {
+        const filtered = projectsList.filter(p => p.department?.toLowerCase() === currentUser.department?.toLowerCase());
+        setProjects(filtered);
+      } else {
+        setProjects(projectsList);
+      }
+    }
+  }, [projectsList, currentUserRole, currentUser, departments, isEmployeeView]);
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'All',
+    priority: 'All',
+    department: 'All',
+    dateRange: 'All',
+    customStart: '',
+    customEnd: ''
+  });
+  
+  const [selectedCardFilter, setSelectedCardFilter] = useState(null); // Stat card filtering override
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Modal open states
+  const [activeModal, setActiveModal] = useState(null); // 'create' | 'assign' | 'task' | 'document' | 'report'
+  
+  // Form States for Modals
+  const [newProjectForm, setNewProjectForm] = useState({
+    name: '', client: '', department: '', manager: '', leader: '', startDate: '', deadline: '', priority: 'Medium', description: '', status: 'Pending'
+  });
+  const [assignTeamForm, setAssignTeamForm] = useState({ projectId: '', memberName: '' });
+  const [selectedMembers, setSelectedMembers] = useState([]);
+  const [assignTeamSearch, setAssignTeamSearch] = useState('');
+  const [createEmpSearch, setCreateEmpSearch] = useState('');
+  const [createSelectedMembers, setCreateSelectedMembers] = useState([]);
+  const [addTaskForm, setAddTaskForm] = useState({ projectId: '', title: '', dueDate: '', priority: 'Medium' });
+  const [selectedTaskEmployees, setSelectedTaskEmployees] = useState([]);
+  const [uploadDocForm, setUploadDocForm] = useState({ projectId: '', docName: '', docType: 'pdf', docSize: '0.8 MB' });
+  const [reportForm, setReportForm] = useState({ projectId: 'all', reportType: 'progress', format: 'pdf', dateRange: 'All' });
+  const [dateErrors, setDateErrors] = useState({ startDate: '', deadline: '' });
+
+  // Filtering Calculation
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      // Card click override filters
+      if (selectedCardFilter) {
+        if (selectedCardFilter === 'Active' && p.status !== 'Active' && p.status !== 'In Progress') return false;
+        if (selectedCardFilter === 'Completed' && p.status !== 'Completed') return false;
+        if (selectedCardFilter === 'Pending' && p.status !== 'Pending') return false;
+        if (selectedCardFilter === 'Delayed' && p.status !== 'Delayed') return false;
+        if (selectedCardFilter === 'Upcoming') {
+          // Deadline in next 30 days and not completed
+          const deadline = new Date(p.deadline);
+          const limitDate = new Date('2026-06-30'); // system date simulation (June 2026 + 30 days)
+          const today = new Date('2026-06-01');
+          if (p.status === 'Completed' || deadline < today || deadline > limitDate) return false;
+        }
+      }
+
+      // Dropdown and Search Filters
+      const matchesSearch =
+        (p.id || '').toLowerCase().includes((filters.search || '').toLowerCase()) ||
+        (p.name || '').toLowerCase().includes((filters.search || '').toLowerCase()) ||
+        (p.manager || '').toLowerCase().includes((filters.search || '').toLowerCase()) ||
+        (p.leader || '').toLowerCase().includes((filters.search || '').toLowerCase());
+
+      const matchesStatus = filters.status === 'All' || p.status === filters.status;
+      const matchesPriority = filters.priority === 'All' || p.priority === filters.priority;
+      const matchesDept = filters.department === 'All' || (p.department || '').toLowerCase() === (filters.department || '').toLowerCase();
+
+      // Timeframe Filter
+      let matchesTimeframe = true;
+      if (filters.dateRange !== 'All') {
+        const pDeadline = new Date(p.deadline);
+        const sysToday = new Date('2026-06-01');
+
+        if (filters.dateRange === 'Today') {
+          const deadlineStr = p.deadline;
+          matchesTimeframe = deadlineStr === '2026-06-01';
+        } else if (filters.dateRange === 'Weekly') {
+          const sysEndOfWeek = new Date('2026-06-07');
+          matchesTimeframe = pDeadline >= sysToday && pDeadline <= sysEndOfWeek;
+        } else if (filters.dateRange === 'Monthly') {
+          const sysEndOfMonth = new Date('2026-06-30');
+          matchesTimeframe = pDeadline >= sysToday && pDeadline <= sysEndOfMonth;
+        } else if (filters.dateRange === 'Custom' && filters.customStart && filters.customEnd) {
+          const start = new Date(filters.customStart);
+          const end = new Date(filters.customEnd);
+          matchesTimeframe = pDeadline >= start && pDeadline <= end;
+        }
+      }
+
+      return matchesSearch && matchesStatus && matchesPriority && matchesDept && matchesTimeframe;
+    });
+  }, [projects, filters, selectedCardFilter]);
+
+  // KPI Calculations
+  const stats = useMemo(() => {
+    const totalActive = projects.filter(p => p.status === 'Active' || p.status === 'In Progress').length;
+    const completed = projects.filter(p => p.status === 'Completed').length;
+    const pending = projects.filter(p => p.status === 'Pending').length;
+    const delayed = projects.filter(p => p.status === 'Delayed').length;
+    
+    // Upcoming: deadlines between 2026-06-01 and 2026-06-30 and not completed
+    const sysToday = new Date('2026-06-01');
+    const limit = new Date('2026-06-30');
+    const upcoming = projects.filter(p => {
+      const deadline = new Date(p.deadline);
+      return p.status !== 'Completed' && deadline >= sysToday && deadline <= limit;
+    }).length;
+
+    return { totalActive, completed, pending, delayed, upcoming };
+  }, [projects]);
+
+  // Recharts Chart Data Calculations
+  // Chart 1: Project Progress Overview & Department Performance
+  const chartProgressOverview = useMemo(() => {
+    const counts = { 'In Progress': 0, Completed: 0, Pending: 0, Delayed: 0, 'On Hold': 0 };
+    projects.forEach(p => {
+      if (counts[p.status] !== undefined) counts[p.status]++;
+      else counts[p.status] = 1;
+    });
+
+    const pieData = Object.keys(counts).map(key => ({
+      name: key,
+      value: counts[key]
+    }));
+
+    // Department average progress
+    const depts = Array.from(new Set((departments || []).map(d => d.name)));
+    const deptPerformance = depts.map(d => {
+      const deptProjs = projects.filter(p => p.department && p.department.toLowerCase() === d.toLowerCase());
+      const avg = deptProjs.length > 0
+        ? Math.round(deptProjs.reduce((acc, curr) => acc + curr.progress, 0) / deptProjs.length)
+        : 0;
+      return { department: d, progress: avg };
+    });
+
+    return { pieData, deptPerformance };
+  }, [projects]);
+
+  // Chart 2: Monthly Projects (Completed, Delayed, Performance Growth)
+  const chartMonthlyAnalytics = useMemo(() => {
+    const months = ['Jan 26', 'Feb 26', 'Mar 26', 'Apr 26', 'May 26', 'Jun 26'];
+    return months.map((month, idx) => {
+      const monthIdx = idx;
+      const matchingProjects = projects.filter(p => {
+        if (!p.deadline) return false;
+        const d = new Date(p.deadline);
+        return d.getMonth() === monthIdx && d.getFullYear() === 2026;
+      });
+      const completed = matchingProjects.filter(p => p.status === 'Completed').length;
+      const delayed = matchingProjects.filter(p => p.status === 'Delayed').length;
+      
+      const baseProductivity = 75 + idx * 3;
+      const activeEmps = employees || [];
+      const avgProd = activeEmps.length > 0
+        ? Math.round(activeEmps.reduce((sum, e) => sum + (e.productivityScore || 0), 0) / activeEmps.length)
+        : baseProductivity;
+      const productivity = Math.max(70, Math.min(100, avgProd - (5 - idx)));
+      
+      return {
+        name: month,
+        completed,
+        delayed,
+        productivity
+      };
+    });
+  }, [projects, employees]);
+
+  // Actions handler
+  const handleView = (proj) => {
+    setSelectedProject(proj);
+    setIsDetailOpen(true);
+  };
+
+  const handleEdit = (proj) => {
+    setNewProjectForm({
+      name: proj.name,
+      client: proj.client || 'Google',
+      department: proj.department,
+      manager: proj.manager || '',
+      leader: proj.leader,
+      startDate: proj.startDate,
+      deadline: proj.deadline,
+      priority: proj.priority,
+      description: proj.description || '',
+      status: proj.status || 'Pending'
+    });
+    setCreateSelectedMembers(proj.members || []);
+    setSelectedProject(proj);
+    setActiveModal('create'); // reuse create form for edit
+  };
+
+  const handleOpenAssignTeam = (proj) => {
+    setAssignTeamForm({ projectId: proj.id, memberName: '' });
+    setSelectedMembers(proj.members || []);
+    setActiveModal('assign');
+  };
+
+  // Toggle tasks check
+  const handleToggleTask = async (projectId, taskId) => {
+    const targetProj = projects.find(p => p.id === projectId);
+    if (!targetProj) return;
+
+    const updatedTasks = targetProj.tasks.map(t => {
+      if (t.id === taskId) {
+        const nextCompleted = !t.completed;
+        return {
+          ...t,
+          completed: nextCompleted,
+          status: nextCompleted ? 'Done' : 'To Do',
+          progress: nextCompleted ? 100 : 0
+        };
+      }
+      return t;
+    });
+
+    // Delegate progress and status calculation to the backend pre-save hook
+    const success = await updateProject(projectId, { tasks: updatedTasks });
+    if (success) {
+      const toggledTask = updatedTasks.find(t => t.id === taskId);
+      try {
+        await fetch((window.API_URL || 'http://localhost:5000') + `/api/v1/tasks/${taskId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ status: toggledTask.status })
+        });
+      } catch (err) {
+        console.error('Failed to sync task status update to tasks collection:', err);
+      }
+
+      if (selectedProject && selectedProject.id === projectId) {
+        // Refresh selectedProject from the updated projects list — backend response carries correct progress/status
+        const freshProj = projects.find(p => p.id === projectId);
+        if (freshProj) setSelectedProject({ ...freshProj, tasks: updatedTasks });
+      }
+      addToast('success', 'Task progress updated!');
+    }
+  };
+
+  // Date validation helpers
+  const getTodayStr = () => new Date().toISOString().split('T')[0];
+
+  const handleStartDateChange = (value) => {
+    const today = getTodayStr();
+    let err = '';
+    if (value && value < today) {
+      err = 'Start date cannot be in the past.';
+    }
+    // Reset deadline error if deadline is now valid
+    let deadlineErr = dateErrors.deadline;
+    if (newProjectForm.deadline && value && newProjectForm.deadline <= value) {
+      deadlineErr = 'Deadline must be after the start date.';
+    } else if (newProjectForm.deadline && value && newProjectForm.deadline > value) {
+      deadlineErr = '';
+    }
+    setDateErrors({ startDate: err, deadline: deadlineErr });
+    setNewProjectForm({ ...newProjectForm, startDate: value });
+  };
+
+  const handleDeadlineChange = (value) => {
+    let err = '';
+    if (value && newProjectForm.startDate && value <= newProjectForm.startDate) {
+      err = 'Deadline must be after the start date.';
+    } else if (value && !newProjectForm.startDate && value < getTodayStr()) {
+      err = 'Deadline must be a future date.';
+    }
+    setDateErrors({ ...dateErrors, deadline: err });
+    setNewProjectForm({ ...newProjectForm, deadline: value });
+  };
+
+  // Create Project Form Submit
+  const handleCreateProjectSubmit = async (e) => {
+    e.preventDefault();
+    // Validate dates before submitting
+    const today = getTodayStr();
+    if (newProjectForm.startDate && newProjectForm.startDate < today) {
+      setDateErrors(prev => ({ ...prev, startDate: 'Start date cannot be in the past.' }));
+      return;
+    }
+    if (newProjectForm.deadline && newProjectForm.startDate && newProjectForm.deadline <= newProjectForm.startDate) {
+      setDateErrors(prev => ({ ...prev, deadline: 'Deadline must be after the start date.' }));
+      return;
+    }
+    if (selectedProject) {
+      // Edit mode — guard against manually marking Completed when tasks are unfinished
+      if (newProjectForm.status === 'Completed') {
+        const unfinishedTasks = (selectedProject.tasks || []).filter(t => !t.completed);
+        if (unfinishedTasks.length > 0) {
+          addToast('error', `Cannot mark project as Completed — ${unfinishedTasks.length} task(s) are still unfinished. Complete all tasks first.`);
+          return;
+        }
+      }
+      const success = await updateProject(selectedProject.id, {
+        ...newProjectForm,
+        members: createSelectedMembers.length > 0 ? createSelectedMembers : (selectedProject.members || [])
+      });
+      if (success) {
+        setSelectedProject(null);
+      }
+    } else {
+      // Create mode
+      const count = projects.length;
+      const nextId = `PRJ-${String(count + 1).padStart(3, '0')}`;
+      // Merge leader into members if not already included
+      const membersList = Array.from(new Set([
+        ...(newProjectForm.leader ? [newProjectForm.leader] : []),
+        ...createSelectedMembers
+      ]));
+      const newProjObj = {
+        id: nextId,
+        name: newProjectForm.name,
+        description: newProjectForm.description,
+        department: newProjectForm.department,
+        client: newProjectForm.client || 'Internal',
+        manager: currentUser.name || 'Unassigned',
+        leader: newProjectForm.leader,
+        members: membersList,
+        priority: newProjectForm.priority,
+        startDate: newProjectForm.startDate || new Date().toISOString().split('T')[0],
+        deadline: newProjectForm.deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        progress: 0,
+        status: 'Pending',
+        tasksTotal: 0,
+        tasksDone: 0,
+        workflowStage: 'Planning',
+        pendingApprovals: 1,
+        delayedActivities: 0,
+        productivityScore: 80,
+        milestonesCompleted: 0,
+        milestonesTotal: 5,
+        documents: [],
+        tasks: []
+      };
+      await addProject(newProjObj);
+    }
+    setActiveModal(null);
+    setNewProjectForm({
+      name: '', client: '', department: '', manager: '', leader: '', startDate: '', deadline: '', priority: 'Medium', description: '', status: 'Pending'
+    });
+    setCreateSelectedMembers([]);
+    setCreateEmpSearch('');
+    setDateErrors({ startDate: '', deadline: '' });
+  };
+
+  const handleToggleMemberSelection = (memberName) => {
+    setSelectedMembers(prev => {
+      if (prev.includes(memberName)) {
+        return prev.filter(m => m !== memberName);
+      } else {
+        return [...prev, memberName];
+      }
+    });
+  };
+
+  const handleToggleTaskEmployee = (memberName) => {
+    setSelectedTaskEmployees(prev => {
+      if (prev.includes(memberName)) {
+        return prev.filter(m => m !== memberName);
+      } else {
+        return [...prev, memberName];
+      }
+    });
+  };
+
+  // Assign Team Member Submit
+  const handleAssignTeamSubmit = async (e) => {
+    e.preventDefault();
+    const { projectId } = assignTeamForm;
+    if (!projectId) return;
+
+    const targetProj = projects.find(p => p.id === projectId);
+    if (!targetProj) return;
+
+    const success = await updateProject(projectId, { members: selectedMembers });
+    if (success) {
+      if (selectedProject && selectedProject.id === projectId) {
+        setSelectedProject({ ...selectedProject, members: selectedMembers });
+      }
+      addToast('success', 'Project team members updated successfully.');
+    }
+    setActiveModal(null);
+  };
+
+  // Add Task Submit
+  const handleAddTaskSubmit = async (e) => {
+    e.preventDefault();
+    const { projectId, title, dueDate, priority } = addTaskForm;
+    if (!projectId || !title.trim()) return;
+
+    const targetProj = projects.find(p => p.id === projectId);
+    if (!targetProj) return;
+
+    const nextTaskId = `t-${projectId}-${targetProj.tasks.length + 1}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const firstEmpName = selectedTaskEmployees[0];
+    const firstEmp = (employees || []).find(e => (e.name || '').toLowerCase() === (firstEmpName || '').toLowerCase());
+    const assigneeId = firstEmp ? firstEmp.id : '';
+
+    const newTasks = [
+      ...targetProj.tasks,
+      {
+        id: nextTaskId,
+        title: title.trim(),
+        completed: false,
+        status: 'To Do',
+        progress: 0,
+        dueDate,
+        priority,
+        assignedTo: selectedTaskEmployees,
+        assigneeName: selectedTaskEmployees.length > 0 ? selectedTaskEmployees.join(', ') : 'Unassigned',
+        assigneeId
+      }
+    ];
+    // Optimistically update the selected project's task list in local state immediately
+    if (selectedProject && selectedProject.id === projectId) {
+      setSelectedProject({ ...selectedProject, tasks: newTasks });
+    }
+
+    // Run database calls in the background asynchronously
+    (async () => {
+      const success = await updateProject(projectId, { tasks: newTasks });
+      if (success) {
+        try {
+          await fetch((window.API_URL || 'http://localhost:5000') + '/api/v1/tasks', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              id: nextTaskId,
+              title: title.trim(),
+              description: addTaskForm.description || '',
+              status: 'To Do',
+              priority,
+              dueDate,
+              assigneeId,
+              assigneeName: selectedTaskEmployees.length > 0 ? selectedTaskEmployees.join(', ') : 'Unassigned'
+            })
+          });
+        } catch (err) {
+          console.error('Failed to sync task creation to tasks collection:', err);
+        }
+      }
+    })();
+    setActiveModal(null);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const name = file.name;
+    const ext = name.split('.').pop().toLowerCase();
+    let docType = 'pdf';
+    if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+      docType = 'excel';
+    } else if (ext === 'docx' || ext === 'doc') {
+      docType = 'word';
+    } else if (ext === 'zip' || ext === 'rar' || ext === '7z' || ext === 'tar' || ext === 'gz') {
+      docType = 'zip';
+    } else if (ext === 'pdf') {
+      docType = 'pdf';
+    }
+
+    let docSize = '0.1 MB';
+    if (file.size > 1024 * 1024) {
+      docSize = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+    } else {
+      docSize = (file.size / 1024).toFixed(0) + ' KB';
+    }
+
+    setUploadDocForm(prev => ({
+      ...prev,
+      docName: name,
+      docType,
+      docSize
+    }));
+  };
+
+  // Upload Document Submit
+  const handleUploadDocSubmit = async (e) => {
+    e.preventDefault();
+    const { projectId, docName, docType, docSize } = uploadDocForm;
+    if (!projectId || !docName.trim()) return;
+
+    const targetProj = projects.find(p => p.id === projectId);
+    if (!targetProj) return;
+
+    const newDocs = [...targetProj.documents, { name: docName.trim(), type: docType, size: docSize || '0.8 MB', uploadedBy: 'Super Admin' }];
+    const success = await updateProject(projectId, { documents: newDocs });
+    if (success) {
+      if (selectedProject && selectedProject.id === projectId) {
+        setSelectedProject({ ...selectedProject, documents: newDocs });
+      }
+      addToast('success', 'Document uploaded and linked to project successfully.');
+    }
+    setActiveModal(null);
+    setUploadDocForm({ projectId: '', docName: '', docType: 'pdf', docSize: '0.8 MB' });
+  };
+
+  // Generate Reports Submit
+  const handleGenerateReportSubmit = (e) => {
+    e.preventDefault();
+    const { projectId, reportType, format, dateRange } = reportForm;
+    if (!projectId) return;
+
+    // Date range filter helper
+    const filterByDateRange = (dateStr) => {
+      if (!dateStr || dateRange === 'All') return true;
+      const parseDate = (dStr) => {
+        const [y, m, d] = dStr.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      };
+      const rDate = parseDate(dateStr);
+      const refDate = new Date();
+      refDate.setHours(0, 0, 0, 0);
+      rDate.setHours(0, 0, 0, 0);
+      const diffTime = refDate.getTime() - rDate.getTime();
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+      if (dateRange === 'Today') {
+        return dateStr === refDate.toISOString().slice(0, 10);
+      }
+      if (dateRange === 'Weekly') {
+        return diffDays >= 0 && diffDays < 7;
+      }
+      if (dateRange === 'Monthly') {
+        return diffDays >= 0 && diffDays < 30;
+      }
+      if (dateRange === 'Yearly') {
+        return diffDays >= 0 && diffDays < 365;
+      }
+      return true;
+    };
+
+    let filename = '';
+    let fileContent = '';
+    let headers = [];
+    let rows = [];
+
+    if (projectId === 'all') {
+      // General All Projects Report
+      filename = `all_projects_report_${reportType}_${dateRange.toLowerCase()}`;
+      addToast('info', 'Compiling report for all projects...');
+
+      const targetProjects = projects.filter(p => filterByDateRange(p.startDate) || filterByDateRange(p.deadline));
+
+      headers = ['Project ID', 'Project Name', 'Client', 'Department', 'Manager', 'Leader', 'Priority', 'Start Date', 'Deadline', 'Progress (%)', 'Status', 'Total Tasks'];
+      rows = targetProjects.map(p => [
+        p.id || '',
+        p.name || '',
+        p.client || 'Internal',
+        p.department || '',
+        p.manager || '',
+        p.leader || '',
+        p.priority || '',
+        p.startDate || '',
+        p.deadline || '',
+        p.progress || 0,
+        p.status || '',
+        p.tasksTotal || 0
+      ]);
+
+      if (format === 'pdf') {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          const tableHeadersHTML = headers.map(h => `<th>${h}</th>`).join('');
+          const tableRowsHTML = rows.map(r => `<tr>${r.map(val => `<td>${val}</td>`).join('')}</tr>`).join('');
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>All Projects Report</title>
+                <style>
+                  body { font-family: sans-serif; padding: 20px; color: #334155; }
+                  h1 { color: #0f172a; margin-bottom: 5px; }
+                  p { color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 20px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                  th { background-color: #f1f5f9; padding: 10px; border: 1px solid #e2e8f0; text-align: left; font-size: 12px; }
+                  td { padding: 10px; border: 1px solid #e2e8f0; font-size: 12px; }
+                  tr:nth-child(even) td { background-color: #f8fafc; }
+                </style>
+              </head>
+              <body>
+                <h1>All Projects Report</h1>
+                <p>Generated on: ${new Date().toLocaleString()} | Date Scope: ${dateRange} | Focus Area: ${reportType}</p>
+                <table>
+                  <thead><tr>${tableHeadersHTML}</tr></thead>
+                  <tbody>${tableRowsHTML}</tbody>
+                </table>
+                <script>
+                  window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };
+                </script>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          addToast('success', 'PDF Print window opened.');
+          setActiveModal(null);
+          setReportForm({ projectId: 'all', reportType: 'progress', format: 'pdf', dateRange: 'All' });
+          return;
+        }
+      } else {
+        fileContent = "\ufeff" + [
+          headers.join(','),
+          ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+      }
+    } else {
+      // Specific Project Report
+      const targetProj = projects.find(p => p.id === projectId);
+      if (!targetProj) return;
+
+      filename = `${targetProj.id}_report_${reportType}_${dateRange.toLowerCase()}`;
+      addToast('info', `Compiling report for "${targetProj.name}"...`);
+
+      const filteredTasks = (targetProj.tasks || []).filter(t => filterByDateRange(t.dueDate));
+
+      if (format === 'pdf') {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          const membersHTML = (targetProj.members || []).map(m => `<li>${m}</li>`).join('');
+          const tasksHTML = filteredTasks.map(t => `
+            <tr>
+              <td>${t.id || ''}</td>
+              <td>${t.title || ''}</td>
+              <td>${t.dueDate || ''}</td>
+              <td>${t.priority || ''}</td>
+              <td>${t.completed ? 'YES' : 'NO'}</td>
+            </tr>
+          `).join('');
+
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Project Report - ${targetProj.name}</title>
+                <style>
+                  body { font-family: sans-serif; padding: 20px; color: #334155; }
+                  h1 { color: #0f172a; margin-bottom: 5px; }
+                  h2 { color: #1e293b; margin-top: 20px; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+                  p { color: #64748b; font-size: 14px; margin-top: 0; }
+                  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                  th { background-color: #f1f5f9; padding: 10px; border: 1px solid #e2e8f0; text-align: left; font-size: 12px; }
+                  td { padding: 10px; border: 1px solid #e2e8f0; font-size: 12px; }
+                  tr:nth-child(even) td { background-color: #f8fafc; }
+                </style>
+              </head>
+              <body>
+                <h1>Project Performance Report</h1>
+                <p>Project: <strong>${targetProj.name} (${targetProj.id})</strong></p>
+                <p>Generated: ${new Date().toLocaleString()} | Date Scope: ${dateRange}</p>
+                
+                <div class="grid">
+                  <div>
+                    <h2>Project Details</h2>
+                    <p><strong>Client:</strong> ${targetProj.client || 'Internal'}</p>
+                    <p><strong>Department:</strong> ${targetProj.department || ''}</p>
+                    <p><strong>Project Manager:</strong> ${targetProj.manager || ''}</p>
+                    <p><strong>Team Leader:</strong> ${targetProj.leader || ''}</p>
+                  </div>
+                  <div>
+                    <h2>Metrics</h2>
+                    <p><strong>Progress:</strong> ${targetProj.progress || 0}%</p>
+                    <p><strong>Status:</strong> ${targetProj.status || ''}</p>
+                    <p><strong>Total Tasks:</strong> ${targetProj.tasksTotal || 0}</p>
+                    <p><strong>Completed Tasks:</strong> ${targetProj.tasksDone || 0}</p>
+                  </div>
+                </div>
+
+                <h2>Team Members</h2>
+                <ul>${membersHTML || '<li>No members assigned</li>'}</ul>
+
+                <h2>Work Tasks (Filtered)</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Task ID</th>
+                      <th>Title</th>
+                      <th>Due Date</th>
+                      <th>Priority</th>
+                      <th>Completed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${tasksHTML || '<tr><td colspan="5" style="text-align:center">No tasks in this date range</td></tr>'}
+                  </tbody>
+                </table>
+
+                <script>
+                  window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };
+                </script>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          addToast('success', 'PDF Print window opened.');
+          setActiveModal(null);
+          setReportForm({ projectId: 'all', reportType: 'progress', format: 'pdf', dateRange: 'All' });
+          return;
+        }
+      } else {
+        // Build detailed CSV
+        headers = [
+          ['PROJECT REPORT', targetProj.name],
+          ['Report Type', reportType.toUpperCase()],
+          ['Generated At', new Date().toLocaleString()],
+          [],
+          ['PROJECT METRICS', 'VALUE'],
+          ['Project ID', targetProj.id],
+          ['Project Name', targetProj.name],
+          ['Client', targetProj.client || 'Internal'],
+          ['Department', targetProj.department],
+          ['Project Manager', targetProj.manager],
+          ['Team Leader', targetProj.leader],
+          ['Priority', targetProj.priority],
+          ['Start Date', targetProj.startDate],
+          ['Deadline', targetProj.deadline],
+          ['Progress', `${targetProj.progress}%`],
+          ['Status', targetProj.status],
+          ['Workflow Stage', targetProj.workflowStage || 'Planning'],
+          ['Tasks Total', targetProj.tasksTotal],
+          ['Tasks Done', targetProj.tasksDone],
+          ['Working Hours logged', targetProj.workingHours || 0],
+          ['Productivity Score', `${targetProj.productivityScore || 80}%`],
+          [],
+          ['TEAM ASSIGNED'],
+          ['Name', 'Role'],
+          ...(targetProj.members || []).map(m => [m, m === targetProj.manager ? 'Project Manager' : m === targetProj.leader ? 'Team Leader' : 'Team Member']),
+          [],
+          ['PROJECT WORK TASKS (FILTERED)'],
+          ['Task ID', 'Task Title', 'Due Date', 'Priority', 'Completed'],
+          ...filteredTasks.map(t => [t.id, t.title, t.dueDate, t.priority, t.completed ? 'YES' : 'NO'])
+        ];
+
+        fileContent = "\ufeff" + headers.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\n');
+      }
+    }
+
+    // Trigger standard Blob download
+    setTimeout(() => {
+      const mimeType = format === 'excel' ? 'application/vnd.ms-excel;charset=utf-8;' : 'text/csv;charset=utf-8;';
+      const fileExtension = format === 'excel' ? 'xls' : 'csv';
+
+      const blob = new Blob([fileContent], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${filename}.${fileExtension}`);
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      addToast('success', `${format.toUpperCase()} report downloaded successfully!`);
+    }, 800);
+
+    setActiveModal(null);
+    setReportForm({ projectId: 'all', reportType: 'progress', format: 'pdf', dateRange: 'All' });
+  };
+
+  // CSV Data Exporter
+  const handleExportCSV = () => {
+    addToast('info', 'Preparing project data CSV...');
+    const headers = ['Project ID', 'Project Name', 'Client', 'Department', 'Manager', 'Leader', 'Priority', 'Start Date', 'Deadline', 'Completion %', 'Status'];
+    const csvRows = [headers.join(',')];
+
+    filteredProjects.forEach(p => {
+      const row = [
+        p.id,
+        `"${p.name.replace(/"/g, '""')}"`,
+        `"${p.client || 'Google'}"`,
+        p.department,
+        p.manager,
+        p.leader,
+        p.priority,
+        p.startDate,
+        p.deadline,
+        `${p.progress}%`,
+        p.status
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'active_projects_report.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addToast('success', 'CSV downloaded successfully!');
+  };
+
+  // Scroll to analytics section
+  const handleViewAnalytics = () => {
+    const chartsSec = document.getElementById('analyticsCharts');
+    if (chartsSec) {
+      chartsSec.scrollIntoView({ behavior: 'smooth' });
+      addToast('info', 'Viewing performance analytics charts');
+    }
+  };
+
+  // Stat card selection toggle
+  const toggleCardFilter = (filterType) => {
+    if (selectedCardFilter === filterType) {
+      setSelectedCardFilter(null);
+    } else {
+      setSelectedCardFilter(filterType);
+    }
+  };
+
+  // Color mapping constants for Recharts pie
+  const COLORS = ['#10b981', '#3b82f6', '#94a3b8', '#ef4444', '#f59e0b'];
+
+  return (
+    <div className={styles.dashboard}>
+      {/* Header and Alerts / Notifications */}
+      <div className={styles.tableHeaderRow}>
+        <div>
+          <h1 style={{ margin: 0 }}>Active Projects Dashboard</h1>
+          <p style={{ margin: 0, fontSize: '0.85rem' }}>
+            {isEmployeeView
+              ? 'View your assigned projects, timelines, and tasks.'
+              : 'Track and manage all company projects, timelines, tasks, and budgets.'}
+          </p>
+        </div>
+
+        {/* Header Alerts Dropdown Button */}
+        <div style={{ position: 'relative', display: 'flex', gap: 10, alignItems: 'center' }}>
+          {showPerspectiveDropdown && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '8px' }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>View Mode:</span>
+              <select
+                value={perspective}
+                onChange={(e) => setPerspective(e.target.value)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                  outline: 'none',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <option value="self">Self Info</option>
+                <option value="company">Company Info</option>
+              </select>
+            </div>
+          )}
+          <div className={styles.syncStatus} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: 'var(--radius-lg)' }}>
+            <span className={styles.syncDot} />
+            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>SYSTEM ACTIVE</span>
+          </div>
+        </div>
+      </div>
+
+
+      {/* Section G - Quick Action Buttons Bar */}
+      {isCompanyView && (
+        <div className={styles.quickActionsRow}>
+          {hasPermission('project_management', 'create') && (
+            <>
+              <button className={`${styles.pageBtn} ${styles.primaryAction}`} onClick={() => { setSelectedProject(null); setActiveModal('create'); }}>
+                <Plus size={14} /> Create New Project
+              </button>
+              <button className={styles.pageBtn} onClick={() => setActiveModal('assign')}>
+                <Users size={14} /> Assign Team
+              </button>
+              <button className={styles.pageBtn} onClick={() => {
+                setAddTaskForm({ projectId: '', title: '', dueDate: '', priority: 'Medium' });
+                setSelectedTaskEmployees([]);
+                setActiveModal('task');
+              }}>
+                <CheckSquare size={14} /> Add Tasks
+              </button>
+              <button className={styles.pageBtn} onClick={() => setActiveModal('document')}>
+                <FileText size={14} /> Upload Documents
+              </button>
+              <button className={styles.pageBtn} onClick={() => setActiveModal('report')}>
+                <BarChart2 size={14} /> Generate Reports
+              </button>
+            </>
+          )}
+          <button className={styles.pageBtn} onClick={() => setActiveModal('report')}>
+            <Download size={14} /> Export Data
+          </button>
+          <button className={styles.pageBtn} onClick={handleViewAnalytics}>
+            <TrendingUp size={14} /> View Analytics
+          </button>
+        </div>
+      )}
+
+      {/* Section A — Top Summary Cards */}
+      <div className={styles.summaryGrid}>
+        <div
+          className={`${styles.summaryCard} ${selectedCardFilter === 'Active' ? styles.summaryCardActive : ''}`}
+          onClick={() => toggleCardFilter('Active')}
+        >
+          <div className={styles.summaryHeader}>
+            <span className={styles.summaryLabel}>Total Active Projects</span>
+            <span className={styles.summaryIcon}><Clock size={16} /></span>
+          </div>
+          <span className={styles.summaryVal}>{stats.totalActive}</span>
+        </div>
+
+        <div
+          className={`${styles.summaryCard} ${selectedCardFilter === 'Completed' ? styles.summaryCardActive : ''}`}
+          onClick={() => toggleCardFilter('Completed')}
+        >
+          <div className={styles.summaryHeader}>
+            <span className={styles.summaryLabel}>Completed Projects</span>
+            <span className={styles.summaryIcon}><CheckCircle size={16} /></span>
+          </div>
+          <span className={styles.summaryVal}>{stats.completed}</span>
+        </div>
+
+        <div
+          className={`${styles.summaryCard} ${selectedCardFilter === 'Pending' ? styles.summaryCardActive : ''}`}
+          onClick={() => toggleCardFilter('Pending')}
+        >
+          <div className={styles.summaryHeader}>
+            <span className={styles.summaryLabel}>Pending Projects</span>
+            <span className={styles.summaryIcon}><Clock size={16} /></span>
+          </div>
+          <span className={styles.summaryVal}>{stats.pending}</span>
+        </div>
+
+        <div
+          className={`${styles.summaryCard} ${styles.delayed} ${selectedCardFilter === 'Delayed' ? styles.summaryCardActive : ''}`}
+          onClick={() => toggleCardFilter('Delayed')}
+        >
+          <div className={styles.summaryHeader}>
+            <span className={styles.summaryLabel} style={{ color: 'var(--color-danger)' }}>Delayed Projects</span>
+            <span className={styles.summaryIcon}><AlertTriangle size={16} style={{ color: 'var(--color-danger)' }} /></span>
+          </div>
+          <span className={styles.summaryVal} style={{ color: 'var(--color-danger)' }}>{stats.delayed}</span>
+        </div>
+
+        <div
+          className={`${styles.summaryCard} ${selectedCardFilter === 'Upcoming' ? styles.summaryCardActive : ''}`}
+          onClick={() => toggleCardFilter('Upcoming')}
+        >
+          <div className={styles.summaryHeader}>
+            <span className={styles.summaryLabel}>Upcoming Deadlines</span>
+            <span className={styles.summaryIcon}><Calendar size={16} /></span>
+          </div>
+          <span className={styles.summaryVal}>{stats.upcoming}</span>
+        </div>
+      </div>
+
+      {/* Section B — Project Performance Analytics (Charts panels) */}
+      <div id="analyticsCharts" className={styles.analyticsRow}>
+        {/* Project Progress Overview */}
+        <div className={styles.chartCard}>
+          <div className={styles.chartHeader}>
+            <h3 className={styles.chartTitle}>Project Progress & Dept Performance</h3>
+          </div>
+          <div className={styles.chartBody}>
+            <div className={styles.pieWrapper}>
+              <div className={styles.pieContainer}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={chartProgressOverview.pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={60}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {chartProgressOverview.pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Center text */}
+                <div style={{ position: 'absolute', textAlign: 'center' }}>
+                  <span style={{ fontSize: '1.2rem', fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>
+                    {projects.length}
+                  </span>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    Projects
+                  </span>
+                </div>
+              </div>
+
+              {/* Department Bars */}
+              <div className={styles.progressList}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dept Performance</span>
+                {chartProgressOverview.deptPerformance.map(dept => (
+                  <div key={dept.department} className={styles.progressItem}>
+                    <div className={styles.progressLabelRow}>
+                      <span>{dept.department}</span>
+                      <span>{dept.progress}% avg progress</span>
+                    </div>
+                    <div className={styles.progressBarBg}>
+                      <div
+                        className={styles.progressBarFill}
+                        style={{ width: `${dept.progress}%`, backgroundColor: 'var(--color-primary)' }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Monthly Project Analytics */}
+        <div className={styles.chartCard}>
+          <div className={styles.chartHeader}>
+            <h3 className={styles.chartTitle}>Monthly Deliveries & Productivity Trend</h3>
+          </div>
+          <div className={styles.chartBody}>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={chartMonthlyAnalytics}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="completed" name="Completed Proj" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="delayed" name="Delayed Proj" fill="var(--color-danger)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Section F — Search & Filters Bar */}
+      <ProjectFilters filters={filters} onFilterChange={setFilters} departments={departments} />
+
+      {/* Active filter chip if card filter is on */}
+      {selectedCardFilter && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-card)', border: '1px solid var(--border-color)', width: 'fit-content', padding: '6px 12px', borderRadius: 'var(--radius-md)' }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Filtering by KPI card: <strong>{selectedCardFilter}</strong></span>
+          <button
+            onClick={() => setSelectedCardFilter(null)}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-danger)', fontWeight: 'bold', fontSize: '1rem', display: 'flex', alignItems: 'center', marginLeft: 4 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Main layout split (Table + Activities) */}
+      <div className={styles.mainLayout}>
+        <div className={styles.mainColumn}>
+          {/* Section C — Active Projects Table */}
+          <ProjectsTable
+            projects={filteredProjects}
+            onView={handleView}
+            onEdit={handleEdit}
+            onAssignTeam={handleOpenAssignTeam}
+          />
+        </div>
+
+        {/* Sidebar panels */}
+        <div className={styles.sideColumn}>
+          {/* Section H — Recent Project Activities Panel */}
+          <ActivityFeed />
+        </div>
+      </div>
+
+      {/* Section E — Project Timeline / Calendar view */}
+      <ProjectTimeline projects={projects} onSelectProject={handleView} />
+
+      {/* Section D — Project Detail Slide-over Panel */}
+      <ProjectDetailPanel
+        project={selectedProject}
+        isOpen={isDetailOpen}
+        onClose={() => setIsDetailOpen(false)}
+        onToggleTask={handleToggleTask}
+      />
+
+      {/* Section K — Sticky Footer Status Bar */}
+      <div className={styles.stickyFooter}>
+        <div className={styles.footerLeft}>
+          <span>Showing <strong>{filteredProjects.length}</strong> of <strong>{projects.length}</strong> Projects</span>
+          <span>|</span>
+          <span>Last Updated: 2 minutes ago</span>
+        </div>
+        <div className={styles.footerRight}>
+          <div className={styles.syncStatus}>
+            <span className={styles.syncDot} />
+            <span>SYNCED TO CLOUD</span>
+          </div>
+          <span>|</span>
+          <span>Backup Status: <strong>Successful</strong></span>
+        </div>
+      </div>
+
+      {/* MODAL 1: CREATE & EDIT PROJECT */}
+      {activeModal === 'create' && (() => {
+        // Employees filtered by selected department + search
+        const createDept = newProjectForm.department || '';
+        const createFilteredEmps = (employees || []).filter(emp => {
+          const empDept = (emp.department || '').toLowerCase().trim();
+          const projDept = createDept.toLowerCase().trim();
+          const matchesDept = !projDept ||
+            empDept === projDept ||
+            empDept.includes(projDept) ||
+            projDept.includes(empDept);
+          const q = createEmpSearch.toLowerCase();
+          const matchesSearch = !q ||
+            (emp.name || '').toLowerCase().includes(q) ||
+            (emp.designation || emp.position || '').toLowerCase().includes(q);
+          return matchesDept && matchesSearch;
+        });
+        const allCreateSelected = createFilteredEmps.length > 0 && createFilteredEmps.every(e => createSelectedMembers.includes(e.name));
+
+        return (
+          <div className={styles.modalBackdrop} onClick={(e) => e.target.classList.contains(styles.modalBackdrop) && setActiveModal(null)}>
+            <div className={styles.modalContent} style={{ maxWidth: '580px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div className={styles.modalHeader} style={{ flexShrink: 0 }}>
+                <h3 className={styles.modalTitle}>{selectedProject ? 'Edit Project Details' : 'Create New Company Project'}</h3>
+                <button className={styles.closeBtn} onClick={() => { setActiveModal(null); setCreateEmpSearch(''); setCreateSelectedMembers([]); }}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleCreateProjectSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <div className={styles.modalBody} style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Project Name</label>
+                    <input
+                      type="text"
+                      required
+                      className={styles.textInput}
+                      value={newProjectForm.name}
+                      onChange={(e) => setNewProjectForm({ ...newProjectForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className={styles.basicGrid}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Client / Partner</label>
+                      <input
+                        type="text"
+                        className={styles.textInput}
+                        value={newProjectForm.client}
+                        onChange={(e) => setNewProjectForm({ ...newProjectForm, client: e.target.value })}
+                      />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Department</label>
+                      <select
+                        className={styles.filterSelect}
+                        style={{ width: '100%' }}
+                        value={newProjectForm.department}
+                        onChange={(e) => {
+                          setNewProjectForm({ ...newProjectForm, department: e.target.value, leader: '' });
+                          setCreateSelectedMembers([]);
+                          setCreateEmpSearch('');
+                        }}
+                        required
+                      >
+                        <option value="">Select a department...</option>
+                        {(departments || []).map(d => (
+                          <option key={d.id || d._id} value={d.name}>
+                            {d.name} ({d.departmentCode})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {/* Team Leader — only show after department is selected */}
+                  {createDept && (
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Team Leader</label>
+                      <select
+                        className={styles.filterSelect}
+                        style={{ width: '100%' }}
+                        value={newProjectForm.leader}
+                        onChange={(e) => setNewProjectForm({ ...newProjectForm, leader: e.target.value })}
+                        required
+                      >
+                        <option value="">Select a team leader...</option>
+                        {(employees || [])
+                          .filter(emp => {
+                            // Must be from the selected department
+                            const empDept = (emp.department || '').toLowerCase().trim();
+                            const selDept = createDept.toLowerCase().trim();
+                            const inDept = empDept === selDept || empDept.includes(selDept) || selDept.includes(empDept);
+                            // Must have a leader role/designation
+                            const isLeader = emp.roleId === 'team_leader' ||
+                              emp.role?.toLowerCase().includes('leader') ||
+                              emp.designation?.toLowerCase().includes('leader') ||
+                              emp.designation?.toLowerCase().includes('lead');
+                            return inDept && isLeader;
+                          })
+                          .map(emp => (
+                            <option key={emp.id} value={emp.name}>
+                              {emp.name} — {emp.designation || emp.position || 'Staff'} ({emp.id})
+                            </option>
+                          ))}
+                      </select>
+                      {createDept && (employees || []).filter(emp => {
+                        const empDept = (emp.department || '').toLowerCase().trim();
+                        const selDept = createDept.toLowerCase().trim();
+                        const inDept = empDept === selDept || empDept.includes(selDept) || selDept.includes(empDept);
+                        const isLeader = emp.roleId === 'team_leader' || emp.role?.toLowerCase().includes('leader') || emp.designation?.toLowerCase().includes('leader') || emp.designation?.toLowerCase().includes('lead');
+                        return inDept && isLeader;
+                      }).length === 0 && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-warning, #f59e0b)', marginTop: '2px' }}>
+                          ⚠ No team leaders found in the <strong>{createDept}</strong> department.
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── ASSIGN TEAM MEMBERS ── */}
+                  <div className={styles.formGroup}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className={styles.formLabel} style={{ margin: 0 }}>
+                        Assign Team Members
+                        {createDept && <span style={{ color: 'var(--color-primary)', marginLeft: 6 }}>— {createDept}</span>}
+                        {createSelectedMembers.length > 0 && (
+                          <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>
+                            ({createSelectedMembers.length} selected)
+                          </span>
+                        )}
+                      </label>
+                      {createFilteredEmps.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allNames = createFilteredEmps.map(e => e.name);
+                            if (allCreateSelected) {
+                              setCreateSelectedMembers(prev => prev.filter(n => !allNames.includes(n)));
+                            } else {
+                              setCreateSelectedMembers(prev => Array.from(new Set([...prev, ...allNames])));
+                            }
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.72rem', fontWeight: '600', cursor: 'pointer', padding: '2px 8px', borderRadius: '4px' }}
+                        >
+                          {allCreateSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                      )}
+                    </div>
+
+                    {!createDept ? (
+                      <div style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '0.82rem' }}>
+                        Please select a department above to see available employees.
+                      </div>
+                    ) : (
+                      <>
+                        {/* Search bar */}
+                        <div style={{ position: 'relative', marginBottom: '8px' }}>
+                          <input
+                            type="text"
+                            placeholder="Search by name or designation..."
+                            className={styles.textInput}
+                            value={createEmpSearch}
+                            onChange={(e) => setCreateEmpSearch(e.target.value)}
+                            style={{ paddingLeft: '34px', fontSize: '0.82rem' }}
+                          />
+                          <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                          </span>
+                        </div>
+
+                        {/* Employee list */}
+                        {createFilteredEmps.length === 0 ? (
+                          <div style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '0.82rem' }}>
+                            No employees found in <strong>{createDept}</strong> department.
+                          </div>
+                        ) : (
+                          <div className={styles.employeeCheckboxList} style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                            {createFilteredEmps.map(emp => {
+                              const isChecked = createSelectedMembers.includes(emp.name);
+                              return (
+                                <div
+                                  key={emp.id}
+                                  className={styles.employeeCheckboxItem}
+                                  onClick={() => {
+                                    setCreateSelectedMembers(prev =>
+                                      prev.includes(emp.name)
+                                        ? prev.filter(n => n !== emp.name)
+                                        : [...prev, emp.name]
+                                    );
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className={styles.employeeCheckbox}
+                                    checked={isChecked}
+                                    readOnly
+                                  />
+                                  <div className={styles.employeeText}>
+                                    <span className={styles.employeeName}>{emp.name}</span>
+                                    <span className={styles.employeeDetails}>
+                                      {emp.designation || emp.position || 'Staff'} · {emp.department || createDept}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className={styles.basicGrid}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Start Date</label>
+                      <input
+                        type="date"
+                        className={styles.textInput}
+                        min={getTodayStr()}
+                        value={newProjectForm.startDate}
+                        onChange={(e) => handleStartDateChange(e.target.value)}
+                      />
+                      {dateErrors.startDate && (
+                        <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+                          ⚠ {dateErrors.startDate}
+                        </span>
+                      )}
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Deadline</label>
+                      <input
+                        type="date"
+                        className={styles.textInput}
+                        min={newProjectForm.startDate ? (() => { const d = new Date(newProjectForm.startDate); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })() : getTodayStr()}
+                        value={newProjectForm.deadline}
+                        onChange={(e) => handleDeadlineChange(e.target.value)}
+                      />
+                      {dateErrors.deadline && (
+                        <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+                          ⚠ {dateErrors.deadline}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className={styles.basicGrid}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Priority Level</label>
+                      <select
+                        className={styles.filterSelect}
+                        style={{ width: '100%' }}
+                        value={newProjectForm.priority}
+                        onChange={(e) => setNewProjectForm({ ...newProjectForm, priority: e.target.value })}
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Urgent">Urgent</option>
+                      </select>
+                    </div>
+                    {selectedProject && (
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Project Status</label>
+                        <select
+                          className={styles.filterSelect}
+                          style={{ width: '100%' }}
+                          value={newProjectForm.status}
+                          onChange={(e) => setNewProjectForm({ ...newProjectForm, status: e.target.value })}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Active">Active</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Delayed">Delayed</option>
+                          <option value="On Hold">On Hold</option>
+                          <option value="Cancelled">Cancelled</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Project Description</label>
+                    <textarea
+                      className={styles.textArea}
+                      value={newProjectForm.description}
+                      onChange={(e) => setNewProjectForm({ ...newProjectForm, description: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className={styles.modalFooter} style={{ flexShrink: 0 }}>
+                  <button type="button" className={styles.pageBtn} onClick={() => { setActiveModal(null); setCreateEmpSearch(''); setCreateSelectedMembers([]); }}>Cancel</button>
+                  <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`}>
+                    {selectedProject ? 'Save Changes' : 'Initialize Project'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL 2: ASSIGN TEAM */}
+      {activeModal === 'assign' && (() => {
+        // Get the selected project's department to filter employees
+        const assignTargetProj = projects.find(p => p.id === assignTeamForm.projectId);
+        const assignDeptName = assignTargetProj?.department || '';
+
+        // Filter employees: match department of the selected project + search query
+        const assignFilteredEmps = (employees || []).filter(emp => {
+          // Department match: project.department is stored as dept.name (e.g. "IT")
+          // emp.department is also the dept name — use includes() for robustness
+          const empDept = (emp.department || '').toLowerCase().trim();
+          const projDept = assignDeptName.toLowerCase().trim();
+          const matchesDept = !projDept ||
+            empDept === projDept ||
+            empDept.includes(projDept) ||
+            projDept.includes(empDept);
+
+          const q = assignTeamSearch.toLowerCase();
+          const matchesSearch = !q ||
+            (emp.name || '').toLowerCase().includes(q) ||
+            (emp.designation || emp.position || '').toLowerCase().includes(q) ||
+            (emp.department || '').toLowerCase().includes(q);
+          return matchesDept && matchesSearch;
+        });
+
+        // Group filtered employees by department
+        const empsByDept = assignFilteredEmps.reduce((acc, emp) => {
+          const dept = emp.department || 'Other';
+          if (!acc[dept]) acc[dept] = [];
+          acc[dept].push(emp);
+          return acc;
+        }, {});
+
+        const totalFiltered = assignFilteredEmps.length;
+        const selectedCount = selectedMembers.length;
+
+        return (
+          <div className={styles.modalBackdrop} onClick={(e) => e.target.classList.contains(styles.modalBackdrop) && setActiveModal(null)}>
+            <div className={styles.modalContent} style={{ maxWidth: '560px' }}>
+              <div className={styles.modalHeader}>
+                <h3 className={styles.modalTitle}>Assign Team Members</h3>
+                <button className={styles.closeBtn} onClick={() => { setActiveModal(null); setAssignTeamSearch(''); }}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleAssignTeamSubmit}>
+                <div className={styles.modalBody}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Target Project</label>
+                    <select
+                      className={styles.filterSelect}
+                      style={{ width: '100%' }}
+                      value={assignTeamForm.projectId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        setAssignTeamForm({ ...assignTeamForm, projectId: selectedId });
+                        const targetProj = projects.find(p => p.id === selectedId);
+                        setSelectedMembers(targetProj ? targetProj.members : []);
+                        setAssignTeamSearch('');
+                      }}
+                    >
+                      <option value="">Select a project...</option>
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.id} - {p.name}</option>)}
+                    </select>
+                  </div>
+
+                  {assignTeamForm.projectId ? (
+                    <div className={styles.formGroup}>
+                      {/* Header row: label + selected count + select-all */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <label className={styles.formLabel} style={{ margin: 0 }}>
+                          Employees — {assignDeptName ? <span style={{ color: 'var(--color-primary)' }}>{assignDeptName} Dept</span> : 'All Departments'}
+                          {selectedCount > 0 && <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>({selectedCount} selected)</span>}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allNames = assignFilteredEmps.map(e => e.name);
+                            const allSelected = allNames.every(n => selectedMembers.includes(n));
+                            if (allSelected) {
+                              setSelectedMembers(prev => prev.filter(n => !allNames.includes(n)));
+                            } else {
+                              setSelectedMembers(prev => Array.from(new Set([...prev, ...allNames])));
+                            }
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.72rem', fontWeight: '600', cursor: 'pointer', padding: '2px 6px', borderRadius: '4px' }}
+                        >
+                          {assignFilteredEmps.length > 0 && assignFilteredEmps.every(e => selectedMembers.includes(e.name)) ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+
+                      {/* Search bar */}
+                      <div style={{ position: 'relative', marginBottom: '10px' }}>
+                        <input
+                          type="text"
+                          placeholder="Search by name, role or department..."
+                          className={styles.textInput}
+                          value={assignTeamSearch}
+                          onChange={(e) => setAssignTeamSearch(e.target.value)}
+                          style={{ paddingLeft: '34px', fontSize: '0.82rem' }}
+                        />
+                        <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        </span>
+                      </div>
+
+                      {/* Department-grouped employee list */}
+                      {totalFiltered === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '0.82rem' }}>
+                          No employees found matching your search.
+                        </div>
+                      ) : (
+                        <div className={styles.employeeCheckboxList} style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                          {Object.entries(empsByDept).map(([dept, deptEmps]) => (
+                            <div key={dept}>
+                              {/* Department header */}
+                              <div style={{
+                                padding: '6px 10px',
+                                background: 'var(--bg-elevated)',
+                                borderRadius: 'var(--radius-sm)',
+                                fontSize: '0.72rem',
+                                fontWeight: '700',
+                                color: 'var(--color-primary)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                marginBottom: '4px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}>
+                                <span>📁 {dept}</span>
+                                <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{deptEmps.length} employee{deptEmps.length !== 1 ? 's' : ''}</span>
+                              </div>
+                              {deptEmps.map(emp => {
+                                const isChecked = selectedMembers.includes(emp.name);
+                                return (
+                                  <div
+                                    key={emp.id}
+                                    className={styles.employeeCheckboxItem}
+                                    onClick={() => handleToggleMemberSelection(emp.name)}
+                                    style={{ marginLeft: '4px' }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className={styles.employeeCheckbox}
+                                      checked={isChecked}
+                                      readOnly
+                                    />
+                                    <div className={styles.employeeText}>
+                                      <span className={styles.employeeName}>{emp.name}</span>
+                                      <span className={styles.employeeDetails}>
+                                        {emp.designation || emp.position || 'Staff'} · {emp.department || 'N/A'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                      Please select a target project first to see and manage employees.
+                    </div>
+                  )}
+                </div>
+                <div className={styles.modalFooter}>
+                  <button type="button" className={styles.pageBtn} onClick={() => { setActiveModal(null); setAssignTeamSearch(''); }}>Cancel</button>
+                  <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`} disabled={!assignTeamForm.projectId}>
+                    Save Team Assignments ({selectedCount})
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL 3: ADD TASK */}
+      {activeModal === 'task' && (
+        <div className={styles.modalBackdrop} onClick={(e) => e.target.classList.contains(styles.modalBackdrop) && setActiveModal(null)}>
+          <div className={styles.modalContent}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Add Project Work Task</h3>
+              <button className={styles.closeBtn} onClick={() => setActiveModal(null)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleAddTaskSubmit}>
+              <div className={styles.modalBody}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Target Project</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={addTaskForm.projectId}
+                    onChange={(e) => {
+                      setAddTaskForm({ ...addTaskForm, projectId: e.target.value });
+                      setSelectedTaskEmployees([]);
+                    }}
+                  >
+                    <option value="">Select a project...</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.id} - {p.name}</option>)}
+                  </select>
+                </div>
+                {addTaskForm.projectId && (() => {
+                  const targetProj = projects.find(p => p.id === addTaskForm.projectId);
+                  const projectMembers = targetProj ? (targetProj.members || []) : [];
+                  
+                  if (projectMembers.length === 0) {
+                    return (
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Select Employees</label>
+                        <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem' }}>
+                          No team members found assigned to this project yet. Please assign team members first.
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const isAllSelected = projectMembers.length > 0 && projectMembers.every(name => selectedTaskEmployees.includes(name));
+
+                  const handleToggleAll = () => {
+                    if (isAllSelected) {
+                      setSelectedTaskEmployees([]);
+                    } else {
+                      setSelectedTaskEmployees([...projectMembers]);
+                    }
+                  };
+
+                  return (
+                    <div className={styles.formGroup}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label className={styles.formLabel}>Select Employees</label>
+                        <button 
+                          type="button" 
+                          onClick={handleToggleAll}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--color-primary)',
+                            fontSize: '0.72rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-elevated)'}
+                          onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                        >
+                          {isAllSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      <div className={styles.employeeCheckboxList}>
+                        {projectMembers.map(memberName => {
+                          const isChecked = selectedTaskEmployees.includes(memberName);
+                          const emp = (employees || []).find(e => (e.name || '').toLowerCase() === (memberName || '').toLowerCase());
+                          return (
+                            <div 
+                              key={memberName} 
+                              className={styles.employeeCheckboxItem}
+                              onClick={() => handleToggleTaskEmployee(memberName)}
+                            >
+                              <input
+                                type="checkbox"
+                                className={styles.employeeCheckbox}
+                                checked={isChecked}
+                                readOnly
+                              />
+                              <div className={styles.employeeText}>
+                                <span className={styles.employeeName}>{memberName}</span>
+                                <span className={styles.employeeDetails}>
+                                  {emp ? `${emp.designation || emp.position || 'Staff'} (${emp.id})` : 'Staff'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Task Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Perform compliance checklist audit"
+                    className={styles.textInput}
+                    value={addTaskForm.title}
+                    onChange={(e) => setAddTaskForm({ ...addTaskForm, title: e.target.value })}
+                  />
+                </div>
+                <div className={styles.basicGrid}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Task Due Date</label>
+                    <input
+                      type="date"
+                      required
+                      className={styles.textInput}
+                      value={addTaskForm.dueDate}
+                      onChange={(e) => setAddTaskForm({ ...addTaskForm, dueDate: e.target.value })}
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Priority</label>
+                    <select
+                      className={styles.filterSelect}
+                      style={{ width: '100%' }}
+                      value={addTaskForm.priority}
+                      onChange={(e) => setAddTaskForm({ ...addTaskForm, priority: e.target.value })}
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Critical">Critical</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.modalFooter}>
+                <button type="button" className={styles.pageBtn} onClick={() => setActiveModal(null)}>Cancel</button>
+                <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`} disabled={!addTaskForm.projectId}>
+                  Create Work Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: UPLOAD DOCUMENT */}
+      {activeModal === 'document' && (
+        <div className={styles.modalBackdrop} onClick={(e) => e.target.classList.contains(styles.modalBackdrop) && setActiveModal(null)}>
+          <div className={styles.modalContent}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Upload Project Documents</h3>
+              <button className={styles.closeBtn} onClick={() => setActiveModal(null)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleUploadDocSubmit}>
+              <div className={styles.modalBody}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Target Project</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={uploadDocForm.projectId}
+                    onChange={(e) => setUploadDocForm({ ...uploadDocForm, projectId: e.target.value })}
+                  >
+                    <option value="">Select a project...</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.id} - {p.name}</option>)}
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Choose File</label>
+                  <input
+                    type="file"
+                    className={styles.textInput}
+                    style={{ padding: '8px' }}
+                    onChange={handleFileChange}
+                    required
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Document File Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Budget_Spreadsheet_Q2.xlsx"
+                    className={styles.textInput}
+                    value={uploadDocForm.docName}
+                    onChange={(e) => setUploadDocForm({ ...uploadDocForm, docName: e.target.value })}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>File Format Type</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={uploadDocForm.docType}
+                    onChange={(e) => setUploadDocForm({ ...uploadDocForm, docType: e.target.value })}
+                  >
+                    <option value="pdf">PDF Document (.pdf)</option>
+                    <option value="excel">Excel Sheet (.xlsx)</option>
+                    <option value="word">Word Document (.docx)</option>
+                    <option value="zip">ZIP Archive (.zip)</option>
+                  </select>
+                </div>
+              </div>
+              <div className={styles.modalFooter}>
+                <button type="button" className={styles.pageBtn} onClick={() => setActiveModal(null)}>Cancel</button>
+                <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`} disabled={!uploadDocForm.projectId}>
+                  Upload File
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: GENERATE REPORTS (Section J) */}
+      {activeModal === 'report' && (
+        <div className={styles.modalBackdrop} onClick={(e) => e.target.classList.contains(styles.modalBackdrop) && setActiveModal(null)}>
+          <div className={styles.modalContent}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Compile Dashboard Analytics Reports</h3>
+              <button className={styles.closeBtn} onClick={() => setActiveModal(null)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleGenerateReportSubmit}>
+              <div className={styles.modalBody}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Target Project</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={reportForm.projectId}
+                    onChange={(e) => setReportForm({ ...reportForm, projectId: e.target.value })}
+                    required
+                  >
+                    <option value="all">All Projects</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.id} - {p.name}</option>)}
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Select Report Focus Area</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={reportForm.reportType}
+                    onChange={(e) => setReportForm({ ...reportForm, reportType: e.target.value })}
+                  >
+                    <option value="progress">Project Progress Report</option>
+                    <option value="productivity">Team Productivity Report</option>
+                    <option value="deadlines">Deadline Tracking Report</option>
+                    <option value="resources">Resource Allocation Report</option>
+                    <option value="performance">Department Project Performance</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Date Scope</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={reportForm.dateRange}
+                    onChange={(e) => setReportForm({ ...reportForm, dateRange: e.target.value })}
+                  >
+                    <option value="All">All Time</option>
+                    <option value="Today">Today</option>
+                    <option value="Weekly">Weekly (Last 7 Days)</option>
+                    <option value="Monthly">Monthly (Last 30 Days)</option>
+                    <option value="Yearly">Yearly (Last 365 Days)</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Export File Format</label>
+                  <select
+                    className={styles.filterSelect}
+                    style={{ width: '100%' }}
+                    value={reportForm.format}
+                    onChange={(e) => setReportForm({ ...reportForm, format: e.target.value })}
+                  >
+                    <option value="pdf">Adobe PDF Document (.pdf)</option>
+                    <option value="excel">Microsoft Excel Sheet (.xlsx)</option>
+                    <option value="csv">Standard CSV File (.csv)</option>
+                  </select>
+                </div>
+              </div>
+              <div className={styles.modalFooter}>
+                <button type="button" className={styles.pageBtn} onClick={() => setActiveModal(null)}>Cancel</button>
+                <button type="submit" className={`${styles.pageBtn} ${styles.primaryAction}`}>
+                  Compile & Export
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Projects;

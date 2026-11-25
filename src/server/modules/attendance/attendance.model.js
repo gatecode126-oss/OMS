@@ -1,0 +1,91 @@
+/**
+ * @file src/modules/attendance/attendance.model.js
+ * @description Mongoose schema definition for Attendance module.
+ */
+
+import mongoose from 'mongoose';
+import { tenantPlugin } from '../../utils/tenantPlugin.js';
+
+const attendanceSchema = new mongoose.Schema({
+  id: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
+  },
+  employeeId: {
+    type: String,
+    index: true
+  },
+  employeeName: {
+    type: String,
+    trim: true
+  },
+  department: {
+    type: String
+  },
+  branch: {
+    type: String
+  },
+  date: {
+    type: String,
+    index: true
+  },
+  punchIn: {
+    type: String,
+    default: '--:--'
+  },
+  punchOut: {
+    type: String,
+    default: '--:--'
+  },
+  totalHours: {
+    type: Number,
+    default: 0
+  },
+  status: {
+    type: String,
+    enum: ['Present', 'Late', 'Absent', 'Half Day', 'Work From Home', 'On Leave', 'Overtime', 'Leave', 'Half-Day', 'WFH'],
+    default: 'Present'
+  },
+  source: {
+    type: String,
+    default: 'Biometric'
+  },
+  breakTime: {
+    type: String,
+    default: '45 mins'
+  },
+  breaks: [{
+    breakType: { type: String },
+    duration: { type: Number }
+  }],
+  shift: {
+    type: String
+  },
+  workMode: {
+    type: String
+  },
+  notes: {
+    type: String,
+    default: ''
+  },
+  overtime: {
+    type: String,
+    default: '0 hrs'
+  }
+}, {
+  timestamps: true,
+  collection: 'attendance'
+});
+
+attendanceSchema.plugin(tenantPlugin);
+attendanceSchema.index({ companyId: 1, id: 1 }, { unique: true });
+attendanceSchema.index({ companyId: 1, employeeId: 1, date: 1 }, { unique: true });
+attendanceSchema.index({ companyId: 1, date: 1 });
+attendanceSchema.index({ companyId: 1, date: -1, createdAt: -1 });
+attendanceSchema.index({ companyId: 1, employeeId: 1, date: -1 });
+
+const Attendance = mongoose.model('Attendance', attendanceSchema);
+
+export default Attendance;

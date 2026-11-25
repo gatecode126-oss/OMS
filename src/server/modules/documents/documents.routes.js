@@ -1,0 +1,44 @@
+/**
+ * @file src/modules/documents/documents.routes.js
+ * @description Routes for Documents module.
+ */
+
+import express from 'express';
+import controller from './documents.controller.js';
+import validation from './documents.validation.js';
+import { validateRequest } from '../../middlewares/validation.middleware.js';
+import { authenticate } from '../../middlewares/auth.middleware.js';
+
+const router = express.Router();
+
+// Public routes placeholder
+router.get('/public', controller.getPublicData);
+
+// File proxy route (before authenticate — browser img/iframe tags cannot send Auth headers)
+// Token is verified manually inside the controller via ?token= query param
+router.get('/:id/file', controller.serveFile);
+
+// Secured routes boundary
+router.use(authenticate);
+
+// Custom utility routes (must place before /:id parameter)
+router.get('/folders', controller.getFolderStructure);
+router.get('/analytics', controller.getAnalytics);
+router.get('/reports', controller.exportReport);
+
+router.route('/')
+  .get(controller.getAll)
+  .post(validateRequest(validation.create), controller.create);
+
+router.route('/:id')
+  .get(controller.getById)
+  .put(validateRequest(validation.update), controller.update)
+  .delete(controller.remove);
+
+router.patch('/:id/restore', controller.restore);
+router.patch('/:id/archive', controller.archive);
+router.patch('/:id/download', controller.incrementDownloads);
+router.post('/:id/versions', controller.uploadVersion);
+router.post('/:id/move', controller.move);
+
+export default router;
