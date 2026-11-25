@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getRequiredRoleForPath, hasRoleAccess, PATH_TO_MODULE, getBaseRole } from '../permissions/permissions';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socketManager';
+import { resolveEmployeeShift } from '../utils/shiftTime';
 
 const AppContext = createContext(undefined);
 
@@ -6038,6 +6039,11 @@ export const AppProvider = ({ children }) => {
       const normalized = normalizeEmployee(emp);
       if (!normalized) return normalized;
 
+      // Standard-shift employees follow the office shift from System Settings
+      const resolvedShift = resolveEmployeeShift(normalized, attendanceRules);
+      normalized.shift = resolvedShift;
+      normalized.shiftTiming = resolvedShift;
+
       // Resolve today's attendance status dynamically
       const todayRecord = (attendance || []).find(
         record => record.employeeId === normalized.id && record.date === todayStr
@@ -6067,7 +6073,7 @@ export const AppProvider = ({ children }) => {
       }
       return normalized;
     });
-  }, [employees, branches, departments, attendance]);
+  }, [employees, branches, departments, attendance, attendanceRules]);
 
   const activeEmployees = useMemo(() => {
     return memoizedEmployees.filter(e => e.accountStatus === 'Active' || e.status === 'Active' || (e.status !== 'Inactive' && e.accountStatus !== 'Inactive'));
@@ -6084,6 +6090,11 @@ export const AppProvider = ({ children }) => {
     })();
 
     const normalized = normalizeEmployee(currentUser);
+    if (normalized) {
+      const resolvedShift = resolveEmployeeShift(normalized, attendanceRules);
+      normalized.shift = resolvedShift;
+      normalized.shiftTiming = resolvedShift;
+    }
     const todayRecord = (attendance || []).find(
       record => record.employeeId === normalized.id && record.date === todayStr
     );
@@ -6111,7 +6122,7 @@ export const AppProvider = ({ children }) => {
       }
     }
     return normalized;
-  }, [currentUser, branches, departments, attendance]);
+  }, [currentUser, branches, departments, attendance, attendanceRules]);
 
 
   const uniqueNotifications = useMemo(() => {

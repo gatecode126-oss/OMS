@@ -42,3 +42,33 @@ export const getShiftWindow = (attendanceRules) => {
     label: `${startLabel} - ${endLabel}`
   };
 };
+
+// Timings the app used to auto-fill for a "Morning Shift" before it read System Settings.
+// An employee still holding one of these never chose a custom timing — they are on the office shift.
+const BUILT_IN_DEFAULT_SHIFTS = new Set([
+  '09:30 am - 06:00 pm',
+  '09:00 am - 06:00 pm',
+  'morning (09:00 am - 06:00 pm)'
+]);
+
+const isOfficeShiftType = (shiftType) => !shiftType || shiftType === 'Morning Shift';
+
+/**
+ * True when the employee follows the office shift from System Settings
+ * (standard/Morning shift with no custom timing of their own).
+ */
+export const followsOfficeShift = (emp) => {
+  if (!emp || emp.workMode === 'WFH') return false;
+  if (!isOfficeShiftType(emp.shiftType)) return false;
+  const timing = String(emp.shiftTiming || emp.shift || '').trim().toLowerCase();
+  return !timing || BUILT_IN_DEFAULT_SHIFTS.has(timing);
+};
+
+/**
+ * The shift timing to show for an employee: the office shift from System Settings
+ * unless the employee has their own (Evening/Night/Flexible or a custom timing).
+ */
+export const resolveEmployeeShift = (emp, attendanceRules) => {
+  if (followsOfficeShift(emp)) return getShiftWindow(attendanceRules).label;
+  return emp?.shiftTiming || emp?.shift || '';
+};

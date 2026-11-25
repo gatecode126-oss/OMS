@@ -12,6 +12,7 @@ import Modal from '../components/common/Modal';
 import Skeleton from '../components/common/Skeleton';
 import { useLocation, useNavigate } from '@/lib/router';
 import { useVisibleInterval } from '../hooks/useVisibleInterval';
+import { getShiftWindow } from '../utils/shiftTime';
 import {
   Search, UserPlus, Eye, EyeOff, Edit2, Trash2, ChevronRight, ArrowLeft,
   Phone, Mail, Calendar, CheckCircle, XCircle, UserCheck, Download,
@@ -283,7 +284,9 @@ const LS_KEY = 'saas_emp_col_visibility';
 const Employees = () => {
   const isLoading = usePageLoading(600);
   const navigate = useNavigate();
-  const { employees: rawEmployees, addEmployee, updateEmployee, deactivateEmployee, activateEmployee, showConfirm, roles, addToast, leaveRequests, branches: dbBranches, departments: rawDbDepartments, teams, appraisalReviews, hasPermission, token, attendance, tasks, dailyReports, fetchEmployees, fetchAttendance, fetchLeaves, fetchDepartments, generalSettings, currentUserRole, currentUser } = useApp();
+  const { employees: rawEmployees, addEmployee, updateEmployee, deactivateEmployee, activateEmployee, showConfirm, roles, addToast, leaveRequests, branches: dbBranches, departments: rawDbDepartments, teams, appraisalReviews, hasPermission, token, attendance, tasks, dailyReports, fetchEmployees, fetchAttendance, fetchLeaves, fetchDepartments, generalSettings, currentUserRole, currentUser, attendanceRules } = useApp();
+  // Morning (standard) shift = office shift from System Settings → Attendance
+  const officeShiftLabel = getShiftWindow(attendanceRules).label;
   
   const employees = useMemo(() => {
     if (!currentUserRole || currentUserRole === 'super_admin') return rawEmployees;
@@ -443,7 +446,7 @@ const Employees = () => {
     designation: '', role: 'Employee', roleId: 'employee',
     joinDate: new Date().toISOString().split('T')[0],
     id: '', avatar: '',
-    shiftTiming: '09:30 AM - 06:00 PM',
+    shiftTiming: officeShiftLabel,
     salaryAmount: '', salaryAllowances: '', salaryDeductions: '',
     teamLeader: '', projectManager: '',
     companyName: '',
@@ -593,7 +596,7 @@ const Employees = () => {
       designation: '', role: 'Employee', roleId: 'employee',
       joinDate: new Date().toISOString().split('T')[0],
       id: '', avatar: '',
-      shiftTiming: '09:30 AM - 06:00 PM',
+      shiftTiming: officeShiftLabel,
       salaryAmount: '', salaryAllowances: '', salaryDeductions: '',
       teamLeader: '', projectManager: '',
       companyName: '',
@@ -1206,7 +1209,7 @@ const Employees = () => {
           ...p,
           workMode: mode,
           shiftType: p.shiftType === 'Flexible Shift' ? 'Morning Shift' : p.shiftType,
-          shiftTiming: p.shiftTiming === 'Flexible' ? '09:30 AM - 06:00 PM' : p.shiftTiming,
+          shiftTiming: p.shiftTiming === 'Flexible' ? officeShiftLabel : p.shiftTiming,
           attendanceRule: p.attendanceRule === 'Flexible Hours' ? 'Standard 9-6' : p.attendanceRule,
           punchInTime: p.punchInTime === 'Not Applicable' ? '09:00 AM' : p.punchInTime,
           punchOutTime: p.punchOutTime === 'Not Applicable' ? '06:00 PM' : p.punchOutTime
@@ -1318,6 +1321,13 @@ const Employees = () => {
         currentAddress: addressToString(formData.currentAddress),
         permanentAddress: addressToString(formData.permanentAddress)
       };
+      // A Morning shift left at the office timing is stored empty so it keeps following
+      // System Settings (a changed office shift then applies without editing each employee).
+      if ((finalData.shiftType || 'Morning Shift') === 'Morning Shift' && finalData.workMode !== 'WFH' &&
+          (finalData.shiftTiming || '').trim().toLowerCase() === officeShiftLabel.toLowerCase()) {
+        finalData.shiftTiming = '';
+        finalData.shift = '';
+      }
 
       if (formMode === 'add') {
         const finalEmail = finalData.officialEmail || `${formData.name.toLowerCase().split(' ').join('.')}@saas.io`;
@@ -3280,7 +3290,7 @@ const Employees = () => {
                           const val = e.target.value;
                           let timing = '';
                           if (val === 'Morning Shift') {
-                            timing = '09:30 AM - 06:00 PM';
+                            timing = officeShiftLabel;
                           } else if (val === 'Evening Shift') {
                             timing = '06:00 PM - 11:00 PM';
                           } else if (val === 'Night Shift') {
