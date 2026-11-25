@@ -26,6 +26,16 @@ const nextConfig = {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false
   },
 
+  // Next.js 16.4.6 tracing bug: every server function's startup loads
+  // next/dist/server/node-environment-extensions/console-file.js, which unconditionally
+  // requires ../dev/browser-logs/file-logger — but the tracer leaves files under
+  // next/dist/server/dev/ out of production function bundles. On Vercel every function then
+  // crashed on boot ("Cannot find module '../dev/browser-logs/file-logger'") → HTTP 500.
+  // Ship that file with all routes.
+  outputFileTracingIncludes: {
+    '/*': ['./node_modules/next/dist/server/dev/browser-logs/file-logger.js']
+  },
+
   // Keep unrelated folders out of the deployed serverless functions
   outputFileTracingExcludes: {
     '*': ['./tests/**', './mobile/**', './docs/**', './logs/**', './scratch/**']
