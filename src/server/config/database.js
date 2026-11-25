@@ -43,9 +43,26 @@ export const database = {
     try {
       logger.info(`Attempting database connection to: ${env.dbUri.replace(/:([^:@]+)@/, ':****@')}`);
 
+      // Serverless (Vercel) runs many short-lived instances against Atlas' connection limit
+      // (500 on the shared tier). Measured: one burst of 25 API requests used 100+ connections
+      // and kept them, so Atlas started refusing connections (TLS alert 80 → HTTP 500/503).
+      //  - autoIndex: each cold start re-ran index checks for every model, inflating the pool.
+      //    Indexes already exist; the long-running server (server.js) still maintains them.
+      //  - small pool + idle timeout so each instance holds only a few connections, briefly.
+      const isServerless = process.env.OMS_SERVERLESS === 'true';
       const mongooseOpts = {
-        autoIndex: true,
-        serverSelectionTimeoutMS: 15000 // Allow enough time for Atlas DNS resolution on local network
+        autoIndex: !isServerless,
+        // Same for autoCreate (a createCollection call per model on every cold start);
+        // MongoDB still creates a missing collection automatically on first insert.
+        autoCreate: !isServerless,
+        serverSelectionTimeoutMS: 15000, // Allow enough time for Atlas DNS resolution on local network
+        ...(isServerless
+          ? {
+              maxPoolSize: parseInt(process.env.MONGO_MAX_POOL_SIZE || '5', 10),
+              minPoolSize: 0,
+              maxIdleTimeMS: 10000
+            }
+          : {})
       };
 
       await mongoose.connect(env.dbUri, mongooseOpts);
