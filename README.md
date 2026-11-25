@@ -49,6 +49,17 @@ instance that shares the same database so scheduled jobs don't run twice.
 > ⚠ The backend tests in `tests/server/` connect to the database configured in `.env` and delete records.
 > Never run them against a real database.
 
+### Deploying
+
+The API, Socket.IO and background jobs need a long-running Node server — **Vercel cannot run them**.
+
+1. **Backend (required)** — Render → *New → Blueprint* → this repo (uses `render.yaml`). Fill in the secret
+   values from `.env` and set `CLIENT_URL` to the web app's public URL (e.g. `https://oms-five-peach.vercel.app`).
+   This one service also serves the full web app at its own URL.
+2. **Web app on Vercel (optional)** — in the Vercel project set `NEXT_PUBLIC_API_URL` to the Render URL
+   (e.g. `https://oms.onrender.com`; the old `VITE_API_URL` name also works) and redeploy.
+3. **Mobile app** — `EXPO_PUBLIC_API_URL` in `mobile/.env.*` must point at the same backend URL.
+
 ---
 
 ## 🚀 Quick Navigation

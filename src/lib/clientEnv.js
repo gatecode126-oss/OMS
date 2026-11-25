@@ -6,8 +6,13 @@
 import './polyfill';
 
 if (typeof window !== 'undefined') {
-  // Web app and API are served from the same origin by server.js; override only when
-  // the API runs on another host.
-  window.API_URL = process.env.NEXT_PUBLIC_API_URL || window.location.origin;
-  window.SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
+  // When server.js serves both the web app and the API (one host), the API is same-origin.
+  // When the web app is hosted separately (e.g. Vercel) set NEXT_PUBLIC_API_URL to the
+  // backend's URL (the old VITE_API_URL name is accepted too — see next.config.mjs).
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.OMS_API_URL || window.location.origin;
+  window.API_URL = apiUrl.replace(/\/+$/, '');
+
+  // Socket.IO runs on the API server, so it follows the API host unless set explicitly
+  const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.OMS_SOCKET_URL || window.API_URL;
+  window.SOCKET_URL = socketUrl.replace(/\/+$/, '');
 }

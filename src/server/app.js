@@ -71,9 +71,17 @@ app.use(compression({ threshold: 1024 }));
 app.use(mongoSanitize());
 
 // Rate Limiting Config
+// Per-IP limits per 15 minutes. Defaults are unchanged; production deployments can raise them
+// with API_RATE_LIMIT_MAX / AUTH_RATE_LIMIT_MAX (a single dashboard session makes well over
+// 100 API calls in 15 minutes because of live refresh).
+const envLimit = (name) => {
+  const value = parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 10000 : 100, // Limit each IP to 10000 requests in dev, 100 in production
+  max: envLimit('API_RATE_LIMIT_MAX') ?? (process.env.NODE_ENV === 'development' ? 10000 : 100), // Limit each IP to 10000 requests in dev, 100 in production
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -84,7 +92,7 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 1000 : 15, // Limit each IP to 1000 attempts in dev, 15 in production
+  max: envLimit('AUTH_RATE_LIMIT_MAX') ?? (process.env.NODE_ENV === 'development' ? 1000 : 15), // Limit each IP to 1000 attempts in dev, 15 in production
   standardHeaders: true,
   legacyHeaders: false,
   message: {

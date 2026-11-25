@@ -3,6 +3,14 @@ const nextConfig = {
   // The Vite app rendered inside <React.StrictMode>; keep the same dev-time checks.
   reactStrictMode: true,
   poweredByHeader: false,
+
+  // Backend URL for deployments where the web app is hosted separately from the API
+  // (e.g. web on Vercel, API on Render). Accepts the pre-migration VITE_* names too, so an
+  // existing Vercel project keeps working without renaming its environment variables.
+  env: {
+    OMS_API_URL: process.env.NEXT_PUBLIC_API_URL || process.env.VITE_API_URL || '',
+    OMS_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL || process.env.VITE_SOCKET_URL || ''
+  },
   compress: true,
   productionBrowserSourceMaps: false,
 
