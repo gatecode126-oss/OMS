@@ -26,7 +26,28 @@ const sendJson = (res, statusCode, body) => {
   res.end(JSON.stringify(body));
 };
 
+// Error text safe to return to the client: name + message, with any credentials in URIs masked
+const describeError = (err) =>
+  `${err?.name || 'Error'}: ${err?.message || String(err)}`.replace(/(\/\/[^:/\s]+:)[^@\s]+@/g, '$1****@');
+
+/**
+ * Any error escaping the handler would make Next.js render its HTML /500 page on Vercel,
+ * which the web app can't parse and which hides the cause. Always answer with JSON instead.
+ */
 export default async function handler(req, res) {
+  try {
+    await handleApiRequest(req, res);
+  } catch (err) {
+    console.error('[API] Unhandled error while handling', req.method, req.url, err);
+    if (!res.headersSent) {
+      sendJson(res, 500, { status: 'error', message: 'API handler failed', error: describeError(err) });
+    } else {
+      res.end();
+    }
+  }
+}
+
+async function handleApiRequest(req, res) {
   const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
   if (missing.length > 0) {
     sendJson(res, 503, {
@@ -45,7 +66,8 @@ export default async function handler(req, res) {
     console.error('[API] Backend failed to start:', err);
     sendJson(res, 503, {
       status: 'error',
-      message: 'Backend could not connect to the database. Check DB_URI and that MongoDB Atlas Network Access allows 0.0.0.0/0.'
+      message: 'Backend failed to start. If this is a database error, check DB_URI and that MongoDB Atlas Network Access allows 0.0.0.0/0.',
+      error: describeError(err)
     });
     return;
   }
