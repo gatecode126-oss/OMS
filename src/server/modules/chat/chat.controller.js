@@ -233,13 +233,12 @@ export const markRead = asyncHandler(async (req, res) => {
 
 // PATCH /api/v1/chat/conversations/:id/unread
 export const markUnread = asyncHandler(async (req, res) => {
-  const { id: conversationId } = req.params;
-  const { id: employeeId, companyId } = req.user;
-
-  const result = await chatService.markAsUnread(
-    conversationId, employeeId, companyId
-  );
-  return successResponse(res, result, 'Messages marked as unread');
+  // chat.service has no markAsUnread implementation (this endpoint always failed with a
+  // TypeError). Respond explicitly instead of referencing a non-existent export.
+  const err = new Error('Marking a conversation as unread is not implemented yet');
+  err.statusCode = 501;
+  err.status = 'fail';
+  throw err;
 });
 
 

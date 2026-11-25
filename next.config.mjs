@@ -9,7 +9,13 @@ const nextConfig = {
   // existing Vercel project keeps working without renaming its environment variables.
   env: {
     OMS_API_URL: process.env.NEXT_PUBLIC_API_URL || process.env.VITE_API_URL || '',
-    OMS_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL || process.env.VITE_SOCKET_URL || ''
+    OMS_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL || process.env.VITE_SOCKET_URL || '',
+    // Vercel builds have no Socket.IO server unless a separate one is configured
+    OMS_REALTIME:
+      process.env.NEXT_PUBLIC_REALTIME ||
+      (process.env.VERCEL && !(process.env.NEXT_PUBLIC_SOCKET_URL || process.env.VITE_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || process.env.VITE_API_URL)
+        ? 'off'
+        : 'on')
   },
   compress: true,
   productionBrowserSourceMaps: false,
@@ -20,10 +26,19 @@ const nextConfig = {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false
   },
 
-  // The Express API under src/server is run directly by server.js, never bundled by Next.
+  // Keep unrelated folders out of the deployed serverless functions
   outputFileTracingExcludes: {
-    '*': ['./src/server/**', './tests/**', './mobile/**', './docs/**', './logs/**']
+    '*': ['./tests/**', './mobile/**', './docs/**', './logs/**', './scratch/**']
   },
+
+  // The Express API (src/server) also runs as a serverless function on Vercel
+  // (src/pages/api/[...path].js). Its Node-only dependencies are loaded from node_modules
+  // at runtime rather than bundled.
+  serverExternalPackages: [
+    'mongoose', 'express', 'socket.io', '@socket.io/redis-adapter', 'redis', 'ioredis',
+    'web-push', 'bcryptjs', 'jsonwebtoken', 'helmet', 'compression', 'morgan',
+    'express-rate-limit', 'express-mongo-sanitize', 'cors', 'dotenv'
+  ],
 
   experimental: {
     // Tree-shake barrel-file icon/chart libraries so each route only ships what it uses
@@ -41,6 +56,14 @@ const nextConfig = {
     return [
       { source: '/activity-logs', destination: '/security', permanent: false },
       { source: '/superadmin', destination: '/superadmin/overview', permanent: false }
+    ];
+  },
+
+  // /health lives outside /api in Express; on Vercel route it to the API function
+  async rewrites() {
+    return [
+      { source: '/health', destination: '/api/health' },
+      { source: '/health/:path*', destination: '/api/health/:path*' }
     ];
   },
 

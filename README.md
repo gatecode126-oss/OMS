@@ -49,16 +49,22 @@ instance that shares the same database so scheduled jobs don't run twice.
 > ⚠ The backend tests in `tests/server/` connect to the database configured in `.env` and delete records.
 > Never run them against a real database.
 
-### Deploying
+### Deploying on Vercel
 
-The API, Socket.IO and background jobs need a long-running Node server — **Vercel cannot run them**.
+On Vercel the web app **and** the REST API deploy together: `src/pages/api/[...path].js` runs the same
+Express API as a serverless function (locally, `server.js` serves it instead).
 
-1. **Backend (required)** — Render → *New → Blueprint* → this repo (uses `render.yaml`). Fill in the secret
-   values from `.env` and set `CLIENT_URL` to the web app's public URL (e.g. `https://oms-five-peach.vercel.app`).
-   This one service also serves the full web app at its own URL.
-2. **Web app on Vercel (optional)** — in the Vercel project set `NEXT_PUBLIC_API_URL` to the Render URL
-   (e.g. `https://oms.onrender.com`; the old `VITE_API_URL` name also works) and redeploy.
-3. **Mobile app** — `EXPO_PUBLIC_API_URL` in `mobile/.env.*` must point at the same backend URL.
+1. **Vercel → Project → Settings → Environment Variables** — add the values from your `.env`:
+   `DB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `REDIS_URL`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_URL_ENDPOINT`,
+   `IMAGEKIT_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `CLIENT_URL` (the site URL).
+   Do **not** set `NEXT_PUBLIC_API_URL` / `VITE_API_URL` (the API is on the same domain).
+2. **MongoDB Atlas → Network Access** — allow `0.0.0.0/0` (Vercel has no fixed IP addresses).
+3. **Redeploy** the project.
+4. **Mobile app** — point `EXPO_PUBLIC_API_URL` in `mobile/.env.*` at the Vercel URL.
+
+Serverless limits on Vercel: no realtime (chat messages, calls and live notifications need a refresh),
+no background jobs (auto punch-out, reminders, poll expiry), and request bodies are limited to ~4.5 MB.
+Everything else works. Running `server.js` on any Node host restores realtime and jobs.
 
 ---
 

@@ -99,8 +99,44 @@ export const initSocket = async (httpServer) => {
   return io;
 };
 
+// ── Serverless (Vercel) mode ────────────────────────────────────────────────
+// Serverless functions can't hold websocket connections, so there is no Socket.IO
+// server. Realtime broadcasts become silent no-ops instead of failing the request.
+const offlineBroadcast = {
+  emit: () => true,
+  to() { return this; },
+  in() { return this; },
+  except() { return this; },
+  timeout() { return this; },
+  compress() { return this; },
+  get volatile() { return this; },
+  socketsJoin: () => {},
+  socketsLeave: () => {},
+  disconnectSockets: () => {},
+  fetchSockets: async () => []
+};
+
+const offlineIO = {
+  ...offlineBroadcast,
+  isOffline: true,
+  isShuttingDown: false,
+  redisAdapterEnabled: false,
+  to: () => offlineBroadcast,
+  in: () => offlineBroadcast,
+  except: () => offlineBroadcast,
+  of: () => offlineIO,
+  use: () => {},
+  on: () => {},
+  adapter: () => {},
+  sockets: { adapter: { rooms: new Map() }, sockets: new Map() },
+  engine: { clientsCount: 0 }
+};
+
+export const isServerless = () => process.env.OMS_SERVERLESS === 'true';
+
 export const getIO = () => {
   if (!io) {
+    if (isServerless()) return offlineIO;
     throw new Error('[Socket.io] Not initialized. Call initSocket() first.');
   }
   return io;

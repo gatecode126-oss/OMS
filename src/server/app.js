@@ -81,7 +81,8 @@ const envLimit = (name) => {
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: envLimit('API_RATE_LIMIT_MAX') ?? (process.env.NODE_ENV === 'development' ? 10000 : 100), // Limit each IP to 10000 requests in dev, 100 in production
+  // On Vercel the production default would lock a single dashboard user out within minutes
+  max: envLimit('API_RATE_LIMIT_MAX') ?? (process.env.NODE_ENV === 'development' ? 10000 : (process.env.VERCEL ? 5000 : 100)), // Limit each IP to 10000 requests in dev, 100 in production
   standardHeaders: true,
   legacyHeaders: false,
   message: {

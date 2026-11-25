@@ -9,7 +9,11 @@ import path from 'path';
 
 // logs/ lives at the project root (process.cwd() when started via server.js)
 const ERROR_TRACE_PATH = path.resolve(process.cwd(), 'logs', 'error_trace.log');
-fs.mkdirSync(path.dirname(ERROR_TRACE_PATH), { recursive: true });
+try {
+  fs.mkdirSync(path.dirname(ERROR_TRACE_PATH), { recursive: true });
+} catch {
+  // read-only filesystem (e.g. Vercel serverless) — trace file writes will just be skipped
+}
 
 export const errorMiddleware = (err, req, res, next) => {
   err.statusCode = err.statusCode || 500;

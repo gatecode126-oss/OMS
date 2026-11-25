@@ -19,9 +19,17 @@ export const getSocket = () => {
   return socket;
 };
 
+// Realtime needs a Socket.IO server (server.js). Serverless hosting (Vercel) has none, so the
+// socket is never connected there instead of retrying /socket.io forever. See next.config.mjs.
+export const isRealtimeEnabled = () => process.env.OMS_REALTIME !== 'off';
+
 export const connectSocket = (token, tenantId) => {
   const currentSocket = getSocket();
-  
+
+  if (!isRealtimeEnabled()) {
+    return currentSocket;
+  }
+
   if (currentSocket.connected || currentSocket.active) {
     console.log('[SocketManager] Socket already connected/connecting, reusing instance.');
     return currentSocket;
