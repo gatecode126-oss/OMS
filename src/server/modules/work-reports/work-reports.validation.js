@@ -69,7 +69,6 @@ export const createSchema = (data) => {
   if (!data.department) errors.push('Department is required');
   if (!data.date) errors.push('Report date is required');
   if (!data.summary || !data.summary.trim()) errors.push('Daily work summary is required');
-  if (!data.majorAccomplishments || !data.majorAccomplishments.trim()) errors.push('Major accomplishments are required');
 
   // Date validation: must be within current week and not in the future
   if (data.date && !isCurrentWeekDate(data.date)) {

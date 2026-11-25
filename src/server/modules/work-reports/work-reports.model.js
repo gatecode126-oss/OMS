@@ -80,9 +80,10 @@ const workReportSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Optional: the simplified daily report form only asks for "today's work done" (summary)
   majorAccomplishments: {
     type: String,
-    required: true
+    default: ''
   },
   challengesFaced: {
     type: String,

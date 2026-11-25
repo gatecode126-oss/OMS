@@ -232,7 +232,7 @@ const WorkReports = () => {
 
   const [formData, setFormData] = useState({
     date: new Date().toLocaleDateString('en-CA'),
-    project: 'General',
+    project: '', // typed manually by the employee
     tasksAssigned: 0,
     tasksCompleted: 0,
     summary: '',
@@ -245,12 +245,10 @@ const WorkReports = () => {
     if (currentUser && projectsList && projectsList.length > 0) {
       const todayStr = getTodayStr();
       const tasks = getAssignedTasksForDate(todayStr);
-      const uniqueProjects = Array.from(new Set(tasks.map(t => t.projectName))).filter(Boolean);
-      const projectVal = uniqueProjects.length > 0 ? uniqueProjects.join(', ') : 'General';
+      // Project name is typed manually — don't overwrite it with task-derived names
       setFormData(prev => ({
         ...prev,
         date: todayStr,
-        project: projectVal,
         tasksAssigned: tasks.length
       }));
     }
@@ -372,13 +370,11 @@ const WorkReports = () => {
   const handleDateChange = async (newDate) => {
     const tasks = getAssignedTasksForDate(newDate);
     const assignedCount = tasks.length;
-    const uniqueProjects = Array.from(new Set(tasks.map(t => t.projectName))).filter(Boolean);
-    const projectVal = uniqueProjects.length > 0 ? uniqueProjects.join(', ') : 'General';
-    
+
+    // Keep the manually typed project name when switching dates
     setFormData(prev => ({
       ...prev,
       date: newDate,
-      project: projectVal,
       tasksAssigned: assignedCount,
       tasksCompleted: 0,
       summary: '',
@@ -400,7 +396,7 @@ const WorkReports = () => {
           setIsFormLocked(false);
           setFormData(prev => ({
             ...prev,
-            project: existing.project || projectVal,
+            project: existing.project || prev.project,
             tasksAssigned: existing.tasksAssigned || assignedCount,
             tasksCompleted: existing.tasksCompleted || 0,
             summary: existing.summary || '',
@@ -413,7 +409,7 @@ const WorkReports = () => {
           setIsFormLocked(true);
           setFormData(prev => ({
             ...prev,
-            project: existing.project || projectVal,
+            project: existing.project || prev.project,
             tasksAssigned: existing.tasksAssigned || assignedCount,
             tasksCompleted: existing.tasksCompleted || 0,
             summary: existing.summary || '',
@@ -461,7 +457,7 @@ const WorkReports = () => {
   const resetForm = () => {
     setFormData({
       date: getTodayStr(),
-      project: 'General',
+      project: '',
       tasksAssigned: 0,
       tasksCompleted: 0,
       summary: '',
@@ -620,20 +616,13 @@ const WorkReports = () => {
       return;
     }
     if (!formData.summary.trim()) {
-      addToast('warning', 'Please provide a daily work summary.');
-      return;
-    }
-    if (!formData.majorAccomplishments.trim()) {
-      addToast('warning', 'Please list your major accomplishments.');
-      return;
-    }
-    if (Number(formData.tasksCompleted) > Number(formData.tasksAssigned)) {
-      addToast('warning', 'Completed tasks cannot exceed assigned tasks.');
+      addToast('warning', "Please describe today's work.");
       return;
     }
 
     const payload = {
       ...formData,
+      project: formData.project.trim(),
       completedTaskIds: selectedTaskIds,
       employeeId: currentUser?.employeeId || currentUser?.id || 'GATECO-EMP-001',
       employeeName: currentUser?.name || 'Employee',
@@ -1694,126 +1683,28 @@ const WorkReports = () => {
                     />
                   </div>
                   <div className="form-group-item">
-                    <label className="reports-form-lbl">Project Name / Client *</label>
+                    <label className="reports-form-lbl">Project Name *</label>
                     <input
                       type="text"
                       className="reports-form-input"
                       value={formData.project}
-                      readOnly
-                      placeholder="No project associated"
-                    />
-                  </div>
-                </div>
- 
-                {/* Active Tasks Checklist */}
-                <div className="form-group-item">
-                  <label className="reports-form-lbl" style={{ marginBottom: '8px', display: 'block' }}>
-                    Select Completed Tasks
-                  </label>
-                  {getAssignedTasksForDate(formData.date).length > 0 ? (
-                    <div className="flex-column gap-2" style={{
-                      maxHeight: '150px',
-                      overflowY: 'auto',
-                      padding: '10px',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--bg-card)'
-                    }}>
-                      {getAssignedTasksForDate(formData.date).map(task => (
-                        <div key={task.id} style={{
-                          display: 'flex',
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'flex-start',
-                          gap: '8px',
-                          cursor: isFormLocked ? 'not-allowed' : 'pointer',
-                          padding: '6px 0',
-                          width: '100%'
-                        }}>
-                          <input
-                            type="checkbox"
-                            id={`task-${task.id}`}
-                            checked={selectedTaskIds.includes(task.id)}
-                            onChange={(e) => handleTaskCheckboxChange(task.id, e.target.checked)}
-                            disabled={isFormLocked}
-                            style={{
-                              cursor: isFormLocked ? 'not-allowed' : 'pointer',
-                              accentColor: 'var(--color-primary)',
-                              width: 'auto',
-                              margin: 0
-                            }}
-                          />
-                          <label htmlFor={`task-${task.id}`} style={{
-                            cursor: isFormLocked ? 'not-allowed' : 'pointer',
-                            margin: 0,
-                            fontSize: '0.85rem',
-                            textTransform: 'none',
-                            color: 'var(--text-primary)',
-                            display: 'inline',
-                            fontWeight: 'normal',
-                            letterSpacing: 'normal'
-                          }}>
-                            {task.title} <strong style={{ color: 'var(--text-muted)' }}>({task.id})</strong>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted" style={{ padding: '4px 0' }}>
-                      No active assigned tasks found for this date.
-                    </div>
-                  )}
-                </div>
-
-                {/* Row 3: Tasks Counts */}
-                <div className="form-row-2">
-                  <div className="form-group-item">
-                    <label className="reports-form-lbl">Tasks Assigned *</label>
-                    <input
-                      type="number"
-                      min="0"
-                      className="reports-form-input"
-                      value={formData.tasksAssigned}
-                      readOnly
-                      required
-                    />
-                  </div>
-                  <div className="form-group-item">
-                    <label className="reports-form-lbl">Tasks Completed *</label>
-                    <input
-                      type="number"
-                      min="0"
-                      className="reports-form-input"
-                      value={formData.tasksCompleted}
-                      onChange={(e) => setFormData(prev => ({ ...prev, tasksCompleted: parseInt(e.target.value, 10) || 0 }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, project: e.target.value }))}
+                      placeholder="Enter project name"
                       disabled={isFormLocked}
                       required
                     />
                   </div>
                 </div>
-
-                {/* Row 4: Summary & Accomplishments */}
+ 
+                {/* Today's work done */}
                 <div className="form-group-item">
-                  <label className="reports-form-lbl">Daily Work Summary *</label>
+                  <label className="reports-form-lbl">Today's Work Done *</label>
                   <textarea
                     className="reports-form-textarea"
                     rows={3}
-                    placeholder={isFormLocked ? "Report locked for editing." : "Describe the specific tasks you worked on today..."}
+                    placeholder={isFormLocked ? "Report locked for editing." : "What did you work on today?"}
                     value={formData.summary}
                     onChange={(e) => setFormData(prev => ({ ...prev, summary: e.target.value }))}
-                    disabled={isFormLocked}
-                    required
-                  />
-                </div>
-
-                <div className="form-group-item">
-                  <label className="reports-form-lbl">Major Accomplishments *</label>
-                  <textarea
-                    className="reports-form-textarea"
-                    rows={2}
-                    placeholder={isFormLocked ? "Report locked for editing." : "Key accomplishments or milestones reached..."}
-                    value={formData.majorAccomplishments}
-                    onChange={(e) => setFormData(prev => ({ ...prev, majorAccomplishments: e.target.value }))}
                     disabled={isFormLocked}
                     required
                   />
@@ -1827,10 +1718,7 @@ const WorkReports = () => {
                 ) : (
                   <div className="flex-column gap-2" style={{ marginTop: 12 }}>
                     <div className="flex-row gap-2">
-                      <Button type="button" variant="secondary" onClick={handleSaveDraft} disabled={isSubmitting} style={{ flex: 1 }}>
-                        Save as Draft
-                      </Button>
-                      <Button type="submit" variant="primary" icon={Send} disabled={isSubmitting} style={{ flex: 2 }}>
+                      <Button type="submit" variant="primary" icon={Send} disabled={isSubmitting} style={{ flex: 1 }}>
                         {isSubmitting ? 'Processing...' : editingReportId ? 'Update Report' : 'Submit Daily Work Report'}
                       </Button>
                     </div>
@@ -2829,10 +2717,12 @@ const WorkReports = () => {
               <div className="box-text-wrapper">{selectedReport.summary}</div>
             </div>
 
-            <div className="drawer-content-box border-left-success">
-              <span className="box-title text-success">Major Achievements & Accomplishments</span>
-              <div className="box-text-wrapper">{selectedReport.majorAccomplishments}</div>
-            </div>
+            {selectedReport.majorAccomplishments && (
+              <div className="drawer-content-box border-left-success">
+                <span className="box-title text-success">Major Achievements & Accomplishments</span>
+                <div className="box-text-wrapper">{selectedReport.majorAccomplishments}</div>
+              </div>
+            )}
 
             {selectedReport.challengesFaced && (
               <div className="drawer-content-box border-left-danger">
@@ -3225,14 +3115,13 @@ const WorkReports = () => {
           </div>
 
           <div className="form-group-item">
-            <label className="reports-form-lbl">Major Accomplishments *</label>
+            <label className="reports-form-lbl">Major Accomplishments (optional)</label>
             <textarea
               className="reports-form-textarea"
               rows={2}
               placeholder="Key accomplishments or milestones reached..."
               value={editFormData.majorAccomplishments}
               onChange={(e) => setEditFormData(prev => ({ ...prev, majorAccomplishments: e.target.value }))}
-              required
             />
           </div>
 
