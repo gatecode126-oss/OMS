@@ -69,6 +69,11 @@ export const database = {
       logger.info('Successfully established database connection.');
       isDatabaseConnected = true;
 
+      // First-run seeding (default Super Admin, payroll config, system settings) is done by the
+      // long-running server. Serverless instances start often and skip it: these records already
+      // exist, and the three checks added a database round trip each to every cold start.
+      if (isServerless) return;
+
       // Ensure at least one primary Super Admin account exists in the admins collection
       const adminCount = await Admin.countDocuments();
       if (adminCount === 0) {

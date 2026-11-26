@@ -877,12 +877,13 @@ const Employees = () => {
     }
   }, []);
 
-  // Live refresh every 5s while the tab is visible (paused in background tabs)
+  // Live refresh every 30s while the tab is visible (paused in background tabs).
+  // Was 5s: 3 API calls every 5s per open tab kept the serverless API and database busy.
   useVisibleInterval(() => {
     fetchEmployees();
     fetchAttendance();
     fetchLeaves();
-  }, 5000);
+  }, 30000);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');

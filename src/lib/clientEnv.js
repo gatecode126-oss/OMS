@@ -4,6 +4,8 @@
  * Must be the first import of the client root so every module sees them.
  */
 import './polyfill';
+// Identical API reads in flight at the same time share one request (reads window.API_URL per call)
+import './dedupeFetch';
 
 if (typeof window !== 'undefined') {
   // When server.js serves both the web app and the API (one host), the API is same-origin.
